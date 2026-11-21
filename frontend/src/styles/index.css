@@ -1,24 +1,112 @@
+
+@import "tailwindcss";
+
+/* ================================
+   1. Global CSS Variables
+================================ */
+
 :root {
-  font-family: system-ui, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #172033;
-  background: #fff;
+  background-color: #f3f5f9;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  min-width: 320px;
   min-height: 100vh;
-  margin: 0;
 }
 
-.layout {
+/* ================================
+   3. Global Elements
+================================ */
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* ================================
+   4. Root Application
+================================ */
+
+#root {
   min-height: 100vh;
-  padding: 2rem;
+}
+
+/* ================================
+   5. Layout Utilities
+================================ */
+
+/**
+ * Safe-area bottom padding for mobile bottom nav on devices with a home bar.
+ * Falls back to 0 on devices without env() support.
+ */
+.safe-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-nav-clearance {
+  padding-bottom: calc(4rem + 1px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 1023px) {
+  .mobile-fab-clearance {
+    padding-bottom: calc(4rem + 1px + 3.5rem + 1rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/**
+ * Slim, unobtrusive scrollbar for the sidebar and other scrollable areas.
+ */
+.overflow-y-auto,
+.overflow-y-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-y-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-y-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-y-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+/**
+ * Focus outline for the main content area (skip-link target).
+ */
+#main-content:focus {
+  outline: none;
 }
