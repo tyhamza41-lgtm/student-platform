@@ -3,6 +3,8 @@ import { useAuth } from '../../context/AuthContext'
 import { getNavigationItems, getUserRoleLabel } from '../../constants/navigation'
 import { Avatar, Badge } from '../ui'
 import NavigationIcon from './NavigationIcon'
+import BrandMark from './BrandMark'
+import BrandWordmark from './BrandWordmark'
 import { cn } from '../../utils/cn'
 import { ROUTES } from '../../constants/routes'
 
@@ -61,15 +63,11 @@ function Sidebar() {
       <div className="flex h-[72px] shrink-0 items-center border-b border-slate-100 px-6 xl:h-[76px] xl:px-5">
           <NavLink
             to={ROUTES.HOME}
-            aria-label="Student Platform — go to home"
+            aria-label="NEXUS — go to home"
             className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
           >
-            <span className="flex size-9 items-center justify-center rounded-[10px] bg-indigo-600 text-white shadow-sm">
-              <NavigationIcon name="cap" className="size-5" aria-hidden />
-            </span>
-            <span className="text-[15px] font-bold tracking-tight text-slate-900">
-              Campus<span className="text-indigo-600">Space</span>
-            </span>
+            <BrandMark />
+            <BrandWordmark />
           </NavLink>
       </div>
 

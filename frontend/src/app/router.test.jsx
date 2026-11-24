@@ -84,7 +84,7 @@ describe('application router', () => {
     expect(await screen.findByRole('heading', { name: /Welcome back, Sam Student/i })).toBeInTheDocument()
     expect(
       within(document.querySelector('header[role="banner"]')).getByRole('link', {
-        name: 'Student Platform — go to home',
+        name: 'NEXUS — go to home',
       }),
     ).toBeInTheDocument()
   })

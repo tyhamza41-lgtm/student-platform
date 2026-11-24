@@ -5,6 +5,8 @@ import { ROUTES } from '../../constants/routes'
 import { USER_ROLES } from '../../constants/roles'
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, Badge } from '../ui'
 import NavigationIcon from './NavigationIcon'
+import BrandMark from './BrandMark'
+import BrandWordmark from './BrandWordmark'
 import UserSearch from './UserSearch'
 import { cn } from '../../utils/cn'
 
@@ -35,7 +37,7 @@ function Topbar() {
         ? 'Class issues'
         : location.pathname === ROUTES.PROFILE
           ? 'Profile'
-          : 'Student Platform'
+          : 'NEXUS'
 
   return (
     <header
@@ -44,15 +46,11 @@ function Topbar() {
     >
       <NavLink
         to={ROUTES.HOME}
-        aria-label="Student Platform — go to home"
+        aria-label="NEXUS — go to home"
         className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 lg:hidden"
       >
-        <span className="flex size-9 items-center justify-center rounded-[10px] bg-indigo-600 text-white shadow-sm">
-          <NavigationIcon name="cap" className="size-5" aria-hidden />
-        </span>
-        <span className="hidden text-[15px] font-bold tracking-tight text-slate-900 sm:inline">
-          Campus<span className="text-indigo-600">Space</span>
-        </span>
+        <BrandMark />
+        <span className="hidden sm:inline"><BrandWordmark /></span>
       </NavLink>
 
       <div className="hidden min-w-0 lg:block">

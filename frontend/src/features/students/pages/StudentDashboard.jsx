@@ -77,12 +77,14 @@ function StudentDashboard({ postsData = mockPosts, eventsData = mockEvents }) {
   }
 
   return (
-    <div className="min-w-0 space-y-6">
-      <WelcomeSection student={student} />
-      <StudentStats
-        events={eventsData}
-        registeredEventIds={registeredEventIds}
-      />
+    <div className="-mt-4 min-w-0 space-y-6 sm:-mt-5">
+      <div className="space-y-4 sm:space-y-5">
+        <WelcomeSection student={student} />
+        <StudentStats
+          events={eventsData}
+          registeredEventIds={registeredEventIds}
+        />
+      </div>
 
       {hasPosts && hasEvents ? (
         <div

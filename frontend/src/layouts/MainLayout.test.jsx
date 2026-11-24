@@ -39,7 +39,7 @@ describe('MainLayout', () => {
       expect(topbar.parentElement.className).toContain('sticky')
     }
 
-    expect(within(sidebar).getByRole('link', { name: 'Student Platform — go to home' })).toBeInTheDocument()
+    expect(within(sidebar).getByRole('link', { name: 'NEXUS — go to home' })).toBeInTheDocument()
   })
 
   it('uses bottom navigation without a mobile sidebar drawer or hamburger', async () => {

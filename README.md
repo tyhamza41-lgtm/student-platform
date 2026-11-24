@@ -1,6 +1,6 @@
-# Student Platform
+# NEXUS
 
-Starter repository structure for the Student Platform project.
+Starter repository structure for the NEXUS student platform project.
 
 ## Repository layout
 
