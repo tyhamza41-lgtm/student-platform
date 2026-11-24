@@ -4,6 +4,10 @@ import MainLayout from '../layouts/MainLayout'
 import PublicLayout from '../layouts/PublicLayout'
 import PlaceholderPage from '../components/common/PlaceholderPage'
 import StudentDashboard from '../features/students/pages/StudentDashboard'
+import PostDetailsPage from '../features/posts/pages/PostDetailsPage'
+import PostFormPage from '../features/posts/pages/PostFormPage'
+import MyPostsPage from '../features/posts/pages/MyPostsPage'
+import PublicProfilePage from '../features/profiles/pages/PublicProfilePage'
 import MockLoginPage from '../features/auth/pages/MockLoginPage'
 import { ROUTES } from '../constants/routes'
 import { USER_ROLES } from '../constants/roles'
@@ -53,6 +57,14 @@ const router = createBrowserRouter([
             element: <StudentDashboard />,
           },
           {
+            path: ROUTES.POSTS.DETAIL(':postId'),
+            element: <PostDetailsPage />,
+          },
+          {
+            path: ROUTES.POSTS.EDIT(':postId'),
+            element: <PostFormPage />,
+          },
+          {
             path: ROUTES.EVENTS,
             element: <PlaceholderPage title="Events" description="Browse and register for events." />,
           },
@@ -66,7 +78,7 @@ const router = createBrowserRouter([
           },
           {
             path: ROUTES.USER_PROFILE(':userId'),
-            element: <PlaceholderPage title="User Profile" description="View a user's profile." />,
+            element: <PublicProfilePage />,
           },
           {
             path: ROUTES.STUDENT.MY_ACTIVITY,
@@ -80,7 +92,7 @@ const router = createBrowserRouter([
             path: ROUTES.REPRESENTATIVE.CREATE_POST,
             element: (
               <RequireRepresentative>
-                <PlaceholderPage title="Create Post" description="Publish a class post." />
+                <PostFormPage />
               </RequireRepresentative>
             ),
           },
@@ -96,7 +108,7 @@ const router = createBrowserRouter([
             path: ROUTES.REPRESENTATIVE.MY_POSTS,
             element: (
               <RequireRepresentative>
-                <PlaceholderPage title="My Posts" description="Posts you have published." />
+                <MyPostsPage />
               </RequireRepresentative>
             ),
           },
@@ -104,7 +116,7 @@ const router = createBrowserRouter([
             path: ROUTES.ASSOCIATION.MY_POSTS,
             element: (
               <RequireRole roles={[USER_ROLES.ASSOCIATION]}>
-                <PlaceholderPage title="Manage Posts" description="Association posts." />
+                <MyPostsPage />
               </RequireRole>
             ),
           },
@@ -120,7 +132,7 @@ const router = createBrowserRouter([
             path: ROUTES.ASSOCIATION.CREATE_POST,
             element: (
               <RequireRole roles={[USER_ROLES.ASSOCIATION]}>
-                <PlaceholderPage title="Create Post" description="Create an association post." />
+                <PostFormPage />
               </RequireRole>
             ),
           },
@@ -144,7 +156,7 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.CREATE_POST,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Create Post" description="Create a platform post." />
+                <PostFormPage />
               </RequireRole>
             ),
           },

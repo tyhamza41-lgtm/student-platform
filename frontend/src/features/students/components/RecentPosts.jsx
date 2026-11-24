@@ -1,26 +1,6 @@
-import { useState } from 'react'
-import { posts as mockPosts } from '../../../mocks/data/posts'
-import { comments } from '../../../mocks/data/comments'
-import PostCard from './PostCard'
+import PostCard from '../../posts/components/PostCard'
 
-function RecentPosts({ posts = mockPosts }) {
-  const [reactionsByPost, setReactionsByPost] = useState({})
-
-  function updateReaction(postId, requestedReaction) {
-    setReactionsByPost((current) => {
-      const currentReaction = current[postId] ?? null
-      const nextReaction = currentReaction === requestedReaction ? null : requestedReaction
-
-      if (nextReaction === null) {
-        const { [postId]: removed, ...remaining } = current
-        void removed
-        return remaining
-      }
-
-      return { ...current, [postId]: nextReaction }
-    })
-  }
-
+function RecentPosts({ posts = [], onPostDeleted, onPostModerated }) {
   if (posts.length === 0) return null
 
   return (
@@ -37,9 +17,8 @@ function RecentPosts({ posts = mockPosts }) {
           <PostCard
             key={post.id}
             post={post}
-            comments={comments.filter((comment) => comment.postId === post.id)}
-            reaction={reactionsByPost[post.id] ?? null}
-            onReactionChange={updateReaction}
+            onDeleted={onPostDeleted}
+            onModerated={onPostModerated}
           />
         ))}
       </div>

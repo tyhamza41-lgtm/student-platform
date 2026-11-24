@@ -8,6 +8,10 @@ export const ROUTES = {
   },
 
   FEED: '/feed',
+  POSTS: {
+    DETAIL: (postId) => `/posts/${postId}`,
+    EDIT: (postId) => `/posts/${postId}/edit`,
+  },
   EVENTS: '/events',
   ISSUES: '/issues',
 

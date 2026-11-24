@@ -135,10 +135,8 @@ export async function deletePost(id, actorId) {
   return transact((database) => {
     const post = requireRecord(database, 'posts', id)
     assertCanManagePost(database, post, actorId)
-    if (database.comments.some((comment) => comment.postId === id) ||
-        database.reactions.some((reaction) => reaction.postId === id)) {
-      throw new MockDataError('CONFLICT', 'Posts with comments or reactions cannot be deleted.')
-    }
+    database.comments = database.comments.filter((comment) => comment.postId !== id)
+    database.reactions = database.reactions.filter((reaction) => reaction.postId !== id)
     database.posts = database.posts.filter((item) => item.id !== id)
     return post
   })

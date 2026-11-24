@@ -127,7 +127,7 @@ describe('application router', () => {
 
     expect(memoryRouter.state.location.pathname).toBe(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(screen.getByText('Coming soon')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Post content' })).toBeInTheDocument()
   })
 
   it('shows Create Issue before account actions for an active representative', async () => {

@@ -3,8 +3,21 @@ import { getCollection, getRecord, transact, MockDataError } from '../../mocks/m
 import { assertOnlyFields, assertText, requireActor, requireRecord } from '../../mocks/serviceUtils.js'
 
 export async function getAll(filters = {}) {
-  const records = await getCollection('comments')
-  return records.filter((comment) => !filters.postId || comment.postId === filters.postId)
+  const [records, users] = await Promise.all([
+    getCollection('comments'),
+    getCollection('users'),
+  ])
+  const usersById = new Map(users.map((user) => [user.id, user]))
+  return records
+    .filter((comment) => !filters.postId || comment.postId === filters.postId)
+    .map((comment) => {
+      const author = usersById.get(comment.authorId)
+      return {
+        ...comment,
+        authorName: comment.authorName || author?.name || 'Platform user',
+        authorAvatar: comment.authorAvatar || author?.avatarUrl || null,
+      }
+    })
 }
 
 export async function getById(id) {
@@ -20,7 +33,10 @@ export async function add(data, actorId) {
       actorId,
       [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
     )
-    requireRecord(database, 'posts', data.postId)
+    const post = requireRecord(database, 'posts', data.postId)
+    if (author.role === USER_ROLES.ASSOCIATION && post.associationId !== author.associationId) {
+      throw new MockDataError('FORBIDDEN', 'Associations can only comment on their own posts.')
+    }
     const comment = {
       id: createId('comments'),
       postId: data.postId,

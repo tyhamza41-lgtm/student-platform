@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { AuthProvider } from '../../../context/AuthContext'
@@ -10,6 +10,12 @@ import { posts } from '../../../mocks/data/posts'
 import { events } from '../../../mocks/data/events'
 import { issues } from '../../../mocks/data/issues'
 import { comments } from '../../../mocks/data/comments'
+import { resetMockDatabase } from '../../../mocks/mockDatabase'
+
+beforeEach(async () => {
+  localStorage.clear()
+  await resetMockDatabase()
+})
 
 async function renderDashboard({ postsData = posts, eventsData = events } = {}) {
   const result = render(
@@ -61,35 +67,47 @@ describe('StudentDashboard', () => {
     const firstPost = within(feed).getAllByRole('article')[0]
     const likeButton = within(firstPost).getByRole('button', { name: `Like post by ${posts[0].authorName}` })
     const dislikeButton = within(firstPost).getByRole('button', { name: `Dislike post by ${posts[0].authorName}` })
+    const likeCount = within(firstPost).getByRole('button', { name: /View users who liked this post/ })
+    const dislikeCount = within(firstPost).getByRole('button', { name: /View users who disliked this post/ })
 
+    await waitFor(() => expect(likeButton).toBeEnabled())
     await user.click(likeButton)
     expect(likeButton).toHaveAttribute('aria-pressed', 'true')
-    expect(within(likeButton).getByText(String(posts[0].likeCount + 1))).toBeInTheDocument()
+    await waitFor(() => expect(likeCount).toHaveTextContent(String(posts[0].likeCount + 1)))
 
+    await waitFor(() => expect(likeButton).toBeEnabled())
     await user.click(likeButton)
     expect(likeButton).toHaveAttribute('aria-pressed', 'false')
-    expect(within(likeButton).getByText(String(posts[0].likeCount))).toBeInTheDocument()
+    await waitFor(() => expect(likeCount).toHaveTextContent(String(posts[0].likeCount)))
 
+    await waitFor(() => expect(dislikeButton).toBeEnabled())
     await user.click(dislikeButton)
     expect(dislikeButton).toHaveAttribute('aria-pressed', 'true')
-    expect(within(dislikeButton).getByText(String(posts[0].dislikeCount + 1))).toBeInTheDocument()
+    await waitFor(() => expect(dislikeCount).toHaveTextContent(String(posts[0].dislikeCount + 1)))
 
+    await waitFor(() => expect(dislikeButton).toBeEnabled())
     await user.click(dislikeButton)
     expect(dislikeButton).toHaveAttribute('aria-pressed', 'false')
-    expect(within(dislikeButton).getByText(String(posts[0].dislikeCount))).toBeInTheDocument()
+    await waitFor(() => expect(dislikeCount).toHaveTextContent(String(posts[0].dislikeCount)))
 
+    await waitFor(() => expect(dislikeButton).toBeEnabled())
     await user.click(dislikeButton)
+    await waitFor(() => expect(dislikeButton).toHaveAttribute('aria-pressed', 'true'))
+    await waitFor(() => expect(likeButton).toBeEnabled())
     await user.click(likeButton)
+    await waitFor(() => expect(likeButton).toHaveAttribute('aria-pressed', 'true'))
     expect(likeButton).toHaveAttribute('aria-pressed', 'true')
     expect(dislikeButton).toHaveAttribute('aria-pressed', 'false')
-    expect(within(likeButton).getByText(String(posts[0].likeCount + 1))).toBeInTheDocument()
-    expect(within(dislikeButton).getByText(String(posts[0].dislikeCount))).toBeInTheDocument()
+    await waitFor(() => expect(likeCount).toHaveTextContent(String(posts[0].likeCount + 1)))
+    expect(dislikeCount).toHaveTextContent(String(posts[0].dislikeCount))
 
+    await waitFor(() => expect(dislikeButton).toBeEnabled())
     await user.click(dislikeButton)
+    await waitFor(() => expect(dislikeButton).toHaveAttribute('aria-pressed', 'true'))
     expect(dislikeButton).toHaveAttribute('aria-pressed', 'true')
     expect(likeButton).toHaveAttribute('aria-pressed', 'false')
-    expect(within(likeButton).getByText(String(posts[0].likeCount))).toBeInTheDocument()
-    expect(within(dislikeButton).getByText(String(posts[0].dislikeCount + 1))).toBeInTheDocument()
+    await waitFor(() => expect(likeCount).toHaveTextContent(String(posts[0].likeCount)))
+    expect(dislikeCount).toHaveTextContent(String(posts[0].dislikeCount + 1))
   })
 
   it('keeps reactions independent across multiple posts', async () => {
@@ -101,12 +119,14 @@ describe('StudentDashboard', () => {
     const firstLike = within(postArticles[0]).getByRole('button', { name: `Like post by ${posts[0].authorName}` })
     const secondLike = within(postArticles[1]).getByRole('button', { name: `Like post by ${posts[1].authorName}` })
 
+    await waitFor(() => expect(firstLike).toBeEnabled())
     await user.click(firstLike)
-    expect(firstLike).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(firstLike).toHaveAttribute('aria-pressed', 'true'))
     expect(secondLike).toHaveAttribute('aria-pressed', 'false')
-    expect(within(secondLike).getByText(String(posts[1].likeCount))).toBeInTheDocument()
 
+    await waitFor(() => expect(secondLike).toBeEnabled())
     await user.click(secondLike)
+    await waitFor(() => expect(secondLike).toHaveAttribute('aria-pressed', 'true'))
     expect(firstLike).toHaveAttribute('aria-pressed', 'true')
     expect(secondLike).toHaveAttribute('aria-pressed', 'true')
   })
