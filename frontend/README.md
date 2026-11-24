@@ -1,16 +1,30 @@
-# React + Vite
+# Student Platform frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The client uses React, Vite, and a frontend-only mock data store. From this
+directory, run `npm run dev`, `npm test -- --run`, `npm run lint`, or
+`npm run build`.
 
-Currently, two official plugins are available:
+## Mock data
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+`src/mocks/seedData.js` is the canonical, read-only seed dataset. Existing
+imports from `src/mocks/data/` remain available for the current dashboard; new
+feature pages should use the async services under `src/features/` rather than
+mutating those seed exports.
 
-## React Compiler
+The mock repository stores a versioned database in localStorage under
+`student-platform.mock-database.v1`. The first service read initializes the
+predictable seed. Service methods return promises and cloned records; lookup
+methods return `null` for unknown IDs, while invalid mutations reject with a
+`MockDataError` whose `code` identifies the failure.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+To restore the seed during development or tests:
 
-## Expanding the ESLint configuration
+```js
+import { resetMockDatabase } from './mocks/mockDatabase'
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+await resetMockDatabase()
+```
+
+Services accept the acting user ID for operations that enforce ownership or
+role permissions. Authentication remains the existing in-memory mock context;
+the mock database does not implement login or connect to a backend.
