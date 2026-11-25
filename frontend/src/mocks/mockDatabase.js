@@ -168,7 +168,17 @@ function assertDatabaseIntegrity(database) {
   }
 
   for (const comment of database.comments) {
-    requireReference('posts', comment.postId, `Comment "${comment.id}"`)
+    const hasPostId = typeof comment.postId === 'string' && Boolean(comment.postId.trim())
+    const hasIssueId = typeof comment.issueId === 'string' && Boolean(comment.issueId.trim())
+    if (
+      hasPostId === hasIssueId ||
+      (Object.hasOwn(comment, 'postId') && !hasPostId) ||
+      (Object.hasOwn(comment, 'issueId') && !hasIssueId)
+    ) {
+      fail('INVALID_DATABASE', `Comment "${comment.id}" must reference exactly one Post or Class Issue.`)
+    }
+    if (hasPostId) requireReference('posts', comment.postId, `Comment "${comment.id}"`)
+    if (hasIssueId) requireReference('issues', comment.issueId, `Comment "${comment.id}"`)
     requireReference('users', comment.authorId, `Comment "${comment.id}"`)
   }
 

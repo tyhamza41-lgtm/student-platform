@@ -57,6 +57,13 @@ describe('posts experience', () => {
     expect(await screen.findByRole('heading', { name: 'Latest announcements' })).toBeInTheDocument()
     expect(await screen.findByText(/Rappel important : le cours de programmation distribuée/)).toBeInTheDocument()
     expect(screen.getAllByRole('article')).toHaveLength(4)
+    const representativePost = screen.getByText('Class Representative').closest('article')
+    expect(within(representativePost).getByRole('link', { name: "View Omar Benali's profile" }))
+      .toHaveAttribute('href', '/users/representative-1')
+    expect(within(representativePost).getByRole('img', { name: 'Omar Benali profile' }))
+      .toHaveAttribute('src', expect.stringContaining('photo-1506794778202'))
+    expect(within(representativePost).getByText('Class/Group: GINF 2 — Génie Informatique (class-ginf-2)'))
+      .toBeInTheDocument()
   })
 
   it('shows empty and recoverable error states for the service-backed dashboard feed', async () => {
@@ -92,6 +99,22 @@ describe('posts experience', () => {
     const image = new File([new Uint8Array([137, 80, 78, 71])], 'campus.png', { type: 'image/png' })
     await user.upload(document.querySelector('input[type="file"]'), image)
     expect(await screen.findByAltText('Preview of the post attachment')).toHaveAttribute('src', expect.stringContaining('data:image/png;base64'))
+    expect(screen.queryByText('Click to upload')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Remove selected image' }))
+    expect(screen.queryByAltText('Preview of the post attachment')).not.toBeInTheDocument()
+    const resetInput = document.querySelector('input[type="file"]')
+    expect(resetInput).not.toBeNull()
+    expect(resetInput.value).toBe('')
+
+    await user.upload(resetInput, image)
+    expect(await screen.findByAltText('Preview of the post attachment')).toHaveAttribute('src', expect.stringContaining('data:image/png;base64'))
+    await user.click(screen.getByRole('button', { name: 'Remove selected image' }))
+
+    const replacementImage = new File([new Uint8Array([255, 216, 255])], 'campus-replacement.jpg', { type: 'image/jpeg' })
+    await user.upload(document.querySelector('input[type="file"]'), replacementImage)
+    expect(await screen.findByAltText('Preview of the post attachment')).toHaveAttribute('src', expect.stringContaining('data:image/jpeg;base64'))
 
     await user.click(screen.getByRole('button', { name: 'Publish post' }))
     expect(await screen.findByRole('heading', { name: /Comments/ })).toBeInTheDocument()
@@ -101,7 +124,24 @@ describe('posts experience', () => {
       authorRole: 'Class Representative',
       classId: 'class-ginf-2',
     })
-    expect(created.imageUrl).toContain('data:image/png;base64')
+    expect(created.imageUrl).toContain('data:image/jpeg;base64')
+  })
+
+  it('does not attach a selected image after it is removed before publishing', async () => {
+    const user = userEvent.setup()
+    await renderPostsRoute('/posts/create', authUsers.representative)
+    await user.type(screen.getByRole('textbox', { name: 'Post content' }), 'Post without an attachment.')
+
+    const image = new File([new Uint8Array([137, 80, 78, 71])], 'remove-me.png', { type: 'image/png' })
+    await user.upload(document.querySelector('input[type="file"]'), image)
+    expect(await screen.findByAltText('Preview of the post attachment')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove selected image' }))
+    expect(document.querySelector('input[type="file"]')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Publish post' }))
+    expect(await screen.findByRole('heading', { name: /Comments/ })).toBeInTheDocument()
+    const created = (await postsService.getAll()).find((post) => post.content === 'Post without an attachment.')
+    expect(created.imageUrl).toBeNull()
   })
 
   it('does not expose post creation to a student and rejects the action in the service', async () => {
@@ -188,6 +228,13 @@ describe('posts experience', () => {
     await renderPostsRoute('/posts/post-1')
     expect(await screen.findByRole('heading', { name: /Comments/ })).toBeInTheDocument()
     expect(screen.getByText('Merci pour le rappel, Omar !')).toBeInTheDocument()
+    const representativePost = screen.getByText('Class Representative').closest('article')
+    expect(within(representativePost).getByRole('link', { name: "View Omar Benali's profile" }))
+      .toHaveAttribute('href', '/users/representative-1')
+    expect(within(representativePost).getByRole('img', { name: 'Omar Benali profile' }))
+      .toHaveAttribute('src', expect.stringContaining('photo-1506794778202'))
+    expect(within(representativePost).getByText('Class/Group: GINF 2 — Génie Informatique (class-ginf-2)'))
+      .toBeInTheDocument()
 
     await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), 'I will review the slides.')
     await user.click(screen.getByRole('button', { name: 'Post comment' }))

@@ -17,16 +17,41 @@ import {
 export { ISSUE_STATUS }
 
 export async function getAll(filters = {}) {
-  const records = await getCollection('issues')
+  const [records, classes, users] = await Promise.all([
+    getCollection('issues'),
+    getCollection('classes'),
+    getCollection('users'),
+  ])
+  const classNames = new Map(classes.map((studentClass) => [studentClass.id, studentClass.name]))
+  const usersById = new Map(users.map((user) => [user.id, user]))
   return records.filter((issue) => (
     (!filters.classId || issue.classId === filters.classId) &&
     (!filters.status || issue.status === filters.status) &&
     (!filters.submittedById || issue.submittedById === filters.submittedById)
-  ))
+  )).map((issue) => {
+    const submitter = usersById.get(issue.submittedById)
+    return {
+      ...issue,
+      className: classNames.get(issue.classId) || issue.classId,
+      submittedByName: submitter?.name || null,
+      submittedByAvatar: submitter?.avatarUrl || null,
+    }
+  })
 }
 
 export async function getById(id) {
-  return getRecord('issues', id)
+  const issue = await getRecord('issues', id)
+  if (!issue) return null
+  const [studentClass, submitter] = await Promise.all([
+    getRecord('classes', issue.classId),
+    getRecord('users', issue.submittedById),
+  ])
+  return {
+    ...issue,
+    className: studentClass?.name || issue.classId,
+    submittedByName: submitter?.name || null,
+    submittedByAvatar: submitter?.avatarUrl || null,
+  }
 }
 
 export async function create(data, representativeId) {
@@ -84,9 +109,19 @@ export async function updateStatus(id, status, directorId) {
   return transact((database) => {
     requireDirector(database, directorId)
     const issue = requireRecord(database, 'issues', id)
+    const transitionedAt = new Date().toISOString()
+    const hasValidFirstViewMetadata = (
+      typeof issue.viewedAt === 'string' &&
+      !Number.isNaN(new Date(issue.viewedAt).getTime()) &&
+      typeof issue.viewedById === 'string' &&
+      Boolean(issue.viewedById.trim())
+    )
     issue.status = status
-    issue.statusUpdatedAt = new Date().toISOString()
-    if (status === ISSUE_STATUS.VIEWED) issue.viewedById = directorId
+    issue.statusUpdatedAt = transitionedAt
+    if (status === ISSUE_STATUS.VIEWED && !hasValidFirstViewMetadata) {
+      issue.viewedAt = transitionedAt
+      issue.viewedById = directorId
+    }
     if (status === ISSUE_STATUS.RESOLVED) issue.resolvedById = directorId
     return issue
   })
@@ -103,6 +138,7 @@ export async function deleteIssue(id, directorId) {
       directorName: director.name,
       deletedAt: new Date().toISOString(),
     })
+    database.comments = database.comments.filter((comment) => comment.issueId !== id)
     database.issues = database.issues.filter((item) => item.id !== id)
     return issue
   })

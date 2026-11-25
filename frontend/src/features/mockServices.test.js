@@ -158,6 +158,85 @@ describe('mock domain services', () => {
     await expectServiceError(comments.deleteComment('missing-comment', 'student-1'), 'NOT_FOUND')
   })
 
+  it('lets authenticated users comment on any class issue while retaining validation', async () => {
+    const comment = await comments.add({
+      issueId: 'issue-1',
+      content: 'The room is still too warm.',
+    }, 'student-1')
+    expect(comment).toMatchObject({
+      issueId: 'issue-1',
+      authorId: 'student-1',
+      authorName: 'Sam Student',
+      authorAvatar: expect.any(String),
+      content: 'The room is still too warm.',
+    })
+    expect(comment).not.toHaveProperty('postId')
+    expect(await comments.getAll({ issueId: 'issue-1' })).toContainEqual(comment)
+
+    await expectServiceError(
+      comments.add({ issueId: 'missing-issue', content: 'Hello' }, 'student-1'),
+      'NOT_FOUND',
+    )
+    await expectServiceError(
+      comments.add({ issueId: 'issue-1', content: '' }, 'student-1'),
+      'VALIDATION_ERROR',
+    )
+    await expectServiceError(
+      comments.add({ issueId: 'issue-1', content: '   ' }, 'student-1'),
+      'VALIDATION_ERROR',
+    )
+    await transact((database) => {
+      const issueClass = database.classes.find((studentClass) => studentClass.id === 'class-ginf-2')
+      issueClass.studentIds = issueClass.studentIds.filter((studentId) => studentId !== 'student-2')
+      database.classes.push({
+        id: 'class-other',
+        name: 'Other Class',
+        institution: 'ENSA Marrakech',
+        studentIds: ['student-2'],
+        representativeId: null,
+        activeRepresentativeIds: [],
+      })
+      database.users.find((user) => user.id === 'student-2').classId = 'class-other'
+    })
+    const crossClassComment = await comments.add({
+      issueId: 'issue-1',
+      content: 'I belong to another class.',
+    }, 'student-2')
+    expect(crossClassComment).toMatchObject({
+      authorId: 'student-2',
+      issueId: 'issue-1',
+      authorName: 'Hamza Tya',
+    })
+    const associationComment = await comments.add({
+      issueId: 'issue-1',
+      content: 'Association update.',
+    }, associationId)
+    expect(associationComment).toMatchObject({
+      authorId: associationId,
+      issueId: 'issue-1',
+    })
+    await expectServiceError(
+      comments.add({ postId: 'post-1', issueId: 'issue-1', content: 'Ambiguous' }, 'student-1'),
+      'VALIDATION_ERROR',
+    )
+  })
+
+  it('allows issue-comment authors and the Director to delete, but denies other users', async () => {
+    const ownComment = await comments.add({
+      issueId: 'issue-1',
+      content: 'I submitted this report.',
+    }, 'student-1')
+    expect((await comments.deleteComment(ownComment.id, 'student-1')).id).toBe(ownComment.id)
+
+    const anotherComment = await comments.add({
+      issueId: 'issue-1',
+      content: 'A separate observation.',
+    }, 'student-1')
+    await expectServiceError(comments.deleteComment(anotherComment.id, 'student-2'), 'FORBIDDEN')
+    expect(await comments.getById(anotherComment.id)).toEqual(anotherComment)
+    expect((await comments.deleteComment(anotherComment.id, directorId)).id).toBe(anotherComment.id)
+  })
+
   it('allows one reaction per user and post, including switching and removing it', async () => {
     const created = await reactions.togglePostReaction('post-1', 'student-1', reactions.REACTION_TYPES.LIKE)
     expect(created.type).toBe('LIKE')
@@ -282,16 +361,22 @@ describe('mock domain services', () => {
   })
 
   it('integrates issue deletion notifications and creates none for failed moderation', async () => {
+    const issueComment = await comments.add({
+      issueId: 'issue-1',
+      content: 'Please keep us updated.',
+    }, 'student-1')
     await expectServiceError(events.deleteEvent('event-2', associationId), 'FORBIDDEN')
     await expectServiceError(events.deleteEvent('missing-event', directorId), 'NOT_FOUND')
     await expectServiceError(issues.deleteIssue('issue-1', 'student-1'), 'FORBIDDEN')
     expect((await getMockDatabaseSnapshot()).notifications).toEqual([])
+    expect(await comments.getById(issueComment.id)).toEqual(issueComment)
 
     const deletedIssue = await issues.deleteIssue('issue-1', directorId)
     const snapshot = await getMockDatabaseSnapshot()
     const issueNotifications = snapshot.notifications.filter((notification) => notification.itemId === deletedIssue.id)
 
     expect(snapshot.issues.some((issue) => issue.id === deletedIssue.id)).toBe(false)
+    expect(snapshot.comments.some((comment) => comment.issueId === deletedIssue.id)).toBe(false)
     expect(issueNotifications).toHaveLength(snapshot.users.length)
     expect(issueNotifications.every((notification) => (
       notification.type === 'ISSUE_DELETED' &&
@@ -340,16 +425,83 @@ describe('mock domain services', () => {
       status: ISSUE_STATUS.PENDING,
     })
 
-    const viewed = await issues.updateStatus(issue.id, ISSUE_STATUS.VIEWED, directorId)
-    expect(viewed).toMatchObject({ status: ISSUE_STATUS.VIEWED, viewedById: directorId })
-    expect(viewed.status).not.toBe(ISSUE_STATUS.RESOLVED)
-    expect((await director.updateClassIssueStatus(issue.id, ISSUE_STATUS.RESOLVED, directorId)).resolvedById)
-      .toBe(directorId)
-    await expectServiceError(issues.updateStatus(issue.id, 'CLOSED', directorId), 'VALIDATION_ERROR')
-    await expectServiceError(issues.updateStatus(issue.id, ISSUE_STATUS.PENDING, 'student-1'), 'FORBIDDEN')
+    await transact((database) => {
+      const originalClass = database.classes.find((studentClass) => studentClass.id === 'class-ginf-2')
+      originalClass.studentIds = originalClass.studentIds.filter((studentId) => studentId !== 'student-2')
+      database.classes.push({
+        id: 'class-ginf-3',
+        name: 'GINF 3',
+        institution: 'ENSA Marrakech',
+        studentIds: ['student-2'],
+        representativeId: null,
+        activeRepresentativeIds: [],
+      })
+      database.users.find((user) => user.id === 'student-2').classId = 'class-ginf-3'
+    })
+    await expectServiceError(issues.create({
+      classId: 'class-ginf-3',
+      title: 'Cross-class issue',
+      description: 'The current representative must not create this issue.',
+    }, representativeId), 'FORBIDDEN')
+
     await expectServiceError(issues.getById('missing-issue').then((item) => {
       if (!item) throw new MockDataError('NOT_FOUND', 'Issue not found')
     }), 'NOT_FOUND')
+  })
+
+  it('records and preserves VIEWED metadata while restricting status changes to Directors', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-11-25T12:00:00.000Z'))
+      const viewed = await issues.updateStatus('issue-1', ISSUE_STATUS.VIEWED, directorId)
+      const firstViewedAt = viewed.viewedAt
+      const firstViewedById = viewed.viewedById
+      expect(viewed).toMatchObject({
+        status: ISSUE_STATUS.VIEWED,
+        viewedAt: '2026-11-25T12:00:00.000Z',
+        viewedById: directorId,
+        statusUpdatedAt: '2026-11-25T12:00:00.000Z',
+      })
+      expect(Number.isNaN(new Date(viewed.viewedAt).getTime())).toBe(false)
+
+      vi.setSystemTime(new Date('2026-11-25T12:01:00.000Z'))
+      const inProgress = await issues.updateStatus('issue-1', ISSUE_STATUS.IN_PROGRESS, directorId)
+      expect(inProgress).toMatchObject({
+        status: ISSUE_STATUS.IN_PROGRESS,
+        viewedAt: firstViewedAt,
+        viewedById: firstViewedById,
+        statusUpdatedAt: '2026-11-25T12:01:00.000Z',
+      })
+
+      vi.setSystemTime(new Date('2026-11-25T12:02:00.000Z'))
+      const viewedAgain = await issues.updateStatus('issue-1', ISSUE_STATUS.VIEWED, directorId)
+      expect(viewedAgain).toMatchObject({
+        status: ISSUE_STATUS.VIEWED,
+        viewedAt: firstViewedAt,
+        viewedById: firstViewedById,
+        statusUpdatedAt: '2026-11-25T12:02:00.000Z',
+      })
+
+      await expectServiceError(
+        issues.updateStatus('issue-1', ISSUE_STATUS.PENDING, 'student-1'),
+        'FORBIDDEN',
+      )
+      await expectServiceError(
+        issues.updateStatus('issue-1', 'CLOSED', directorId),
+        'VALIDATION_ERROR',
+      )
+
+      vi.setSystemTime(new Date('2026-11-25T12:03:00.000Z'))
+      const resolved = await director.updateClassIssueStatus('issue-1', ISSUE_STATUS.RESOLVED, directorId)
+      expect(resolved).toMatchObject({
+        resolvedById: directorId,
+        viewedAt: firstViewedAt,
+        viewedById: firstViewedById,
+        statusUpdatedAt: '2026-11-25T12:03:00.000Z',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('assigns representatives only to active students and removes their class permissions on deactivation', async () => {

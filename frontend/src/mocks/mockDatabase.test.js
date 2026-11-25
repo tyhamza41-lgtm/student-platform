@@ -5,6 +5,7 @@ import {
   getMockDatabaseSnapshot,
   MOCK_STORAGE_KEY,
   resetMockDatabase,
+  transact,
 } from './mockDatabase.js'
 import { users } from './data/users.js'
 import { classes } from './data/classes.js'
@@ -92,6 +93,9 @@ describe('mock database', () => {
       userIds.has(issue.submittedById) &&
       Object.values(ISSUE_STATUS).includes(issue.status)
     ))).toBe(true)
+    const viewedIssue = snapshot.issues.find((issue) => issue.status === ISSUE_STATUS.VIEWED)
+    expect(viewedIssue).toMatchObject({ viewedById: 'director-1' })
+    expect(Number.isNaN(new Date(viewedIssue.viewedAt).getTime())).toBe(false)
     expect(Object.values(REACTION_TYPES)).toEqual(['LIKE', 'DISLIKE'])
   })
 
@@ -101,6 +105,52 @@ describe('mock database', () => {
 
     expect((await getCollection('posts'))[0].content).not.toBe('local mutation')
     expect(Object.isFrozen(seedData.posts[0])).toBe(true)
+  })
+
+  it('requires every comment to reference exactly one existing Post or Class Issue', async () => {
+    await transact((database) => {
+      database.comments.push({
+        id: 'post-comment-integrity',
+        postId: 'post-1',
+        authorId: 'student-1',
+      })
+    })
+    await transact((database) => {
+      database.comments.push({
+        id: 'issue-comment-integrity',
+        issueId: 'issue-1',
+        authorId: 'student-1',
+      })
+    })
+    const validComments = await getCollection('comments')
+
+    await expect(transact((database) => {
+      database.comments.push({ id: 'orphan-comment', authorId: 'student-1' })
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+    await expect(transact((database) => {
+      database.comments.push({
+        id: 'missing-post-comment',
+        postId: 'missing-post',
+        authorId: 'student-1',
+      })
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+    await expect(transact((database) => {
+      database.comments.push({
+        id: 'missing-issue-comment',
+        issueId: 'missing-issue',
+        authorId: 'student-1',
+      })
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+    await expect(transact((database) => {
+      database.comments.push({
+        id: 'ambiguous-comment',
+        postId: 'post-1',
+        issueId: 'issue-1',
+        authorId: 'student-1',
+      })
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+
+    expect(await getCollection('comments')).toEqual(validComments)
   })
 
   it('persists mutations in localStorage and reset restores the exact seed', async () => {

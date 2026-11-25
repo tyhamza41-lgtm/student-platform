@@ -77,17 +77,30 @@ function toPostRecord(database, data, author, id) {
 }
 
 export async function getAll(filters = {}) {
-  const records = await getCollection('posts')
+  const [records, classes] = await Promise.all([
+    getCollection('posts'),
+    getCollection('classes'),
+  ])
+  const classNames = new Map(classes.map((studentClass) => [studentClass.id, studentClass.name]))
   return records.filter((post) => (
     (!filters.authorId || post.authorId === filters.authorId) &&
     (!filters.classId || post.classId === filters.classId) &&
     (!filters.associationId || post.associationId === filters.associationId) &&
     (!filters.status || post.status === filters.status)
-  ))
+  )).map((post) => ({
+    ...post,
+    ...(post.classId ? { className: classNames.get(post.classId) || post.classId } : {}),
+  }))
 }
 
 export async function getById(id) {
-  return getRecord('posts', id)
+  const post = await getRecord('posts', id)
+  if (!post || !post.classId) return post
+  const studentClass = await getRecord('classes', post.classId)
+  return {
+    ...post,
+    className: studentClass?.name || post.classId,
+  }
 }
 
 export async function create(data, actorId) {

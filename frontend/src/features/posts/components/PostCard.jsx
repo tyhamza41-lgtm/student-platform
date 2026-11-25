@@ -17,6 +17,12 @@ function ReactionIcon({ type }) {
   return <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
 }
 
+function getClassGroupLabel(post) {
+  const name = post.className || post.classId
+  const identifier = post.classId && post.classId !== name ? ` (${post.classId})` : ''
+  return `Class/Group: ${name}${identifier}`
+}
+
 function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) {
   const { currentUser } = useAuth()
   const navigate = useNavigate()
@@ -129,8 +135,9 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
     setError('')
     try {
       const updatedPost = await postsService.setModerationStatus(post.id, status, currentUser.id)
-      setCurrentPost(updatedPost)
-      onModerated?.(updatedPost)
+      const updatedPostWithClass = { ...updatedPost, className: currentPost.className }
+      setCurrentPost(updatedPostWithClass)
+      onModerated?.(updatedPostWithClass)
     } catch (actionError) {
       setError(actionError.message || 'Could not update post visibility.')
     } finally {
@@ -160,6 +167,11 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
           <time className="mt-0.5 block text-xs text-slate-500" dateTime={currentPost.publishedAt}>
             {formatRelativeTime(currentPost.publishedAt)}
           </time>
+          {currentPost.authorRole === 'Class Representative' && currentPost.classId && (
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              {getClassGroupLabel(currentPost)}
+            </p>
+          )}
         </div>
         {canManage && (
           <div className="flex shrink-0 items-center gap-1">

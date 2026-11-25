@@ -15,6 +15,7 @@ export const ROUTES = {
   EVENTS: '/events',
   EVENT_DETAILS: (eventId) => `/events/${eventId}`,
   ISSUES: '/issues',
+  ISSUE_DETAILS: (issueId) => `/issues/${issueId}`,
 
   PROFILE: '/profile',
   USER_PROFILE: (userId) => `/users/${userId}`,
@@ -45,5 +46,6 @@ export const ROUTES = {
     REPRESENTATIVES: '/director/representatives',
     MODERATION: '/director/moderation',
     ISSUES: '/director/issues',
+    ISSUE_DETAILS: (issueId) => `/director/issues/${issueId}`,
   },
 }

@@ -269,6 +269,8 @@ const data = {
       description: 'Le projecteur s’éteint plusieurs fois pendant les présentations.',
       submittedAt: '2026-11-18T15:40:00',
       status: ISSUE_STATUS.VIEWED,
+      viewedAt: '2026-11-18T16:00:00',
+      viewedById: 'director-1',
     },
     {
       id: 'issue-3',

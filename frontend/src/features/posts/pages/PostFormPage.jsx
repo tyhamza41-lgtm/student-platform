@@ -75,6 +75,12 @@ function PostFormPage() {
     }
   }
 
+  function handleRemoveImage() {
+    setImageFile(null)
+    setImageUrl(null)
+    setImagePreview('')
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
@@ -167,36 +173,35 @@ function PostFormPage() {
               />
             </FormField>
 
-            <FileUpload
-              label="Image attachment (optional)"
-              accept="image/*"
-              maxSize={MAX_IMAGE_SIZE}
-              files={imageFile ? [imageFile] : []}
-              onChange={handleImageChange}
-              helperText="PNG, JPG, GIF, or WebP up to 2 MB."
-            />
+            {!imagePreview && !imageFile && (
+              <FileUpload
+                label="Image attachment (optional)"
+                accept="image/*"
+                maxSize={MAX_IMAGE_SIZE}
+                files={[]}
+                onChange={handleImageChange}
+                helperText="PNG, JPG, GIF, or WebP up to 2 MB."
+              />
+            )}
 
             {imagePreview && (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-slate-700">Image preview</p>
-                <img
-                  src={imagePreview}
-                  alt="Preview of the post attachment"
-                  className="max-h-80 w-full rounded-xl border border-slate-200 object-contain"
-                />
-                {!imageFile && imageUrl && (
-                  <Button
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Preview of the post attachment"
+                    className="max-h-80 w-full rounded-xl border border-slate-200 object-contain"
+                  />
+                  <button
                     type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setImageUrl(null)
-                      setImagePreview('')
-                    }}
+                    aria-label="Remove selected image"
+                    onClick={handleRemoveImage}
+                    className="absolute right-2 top-2 inline-flex size-8 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-700 shadow hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                   >
-                    Remove current image
-                  </Button>
-                )}
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </div>
               </div>
             )}
 

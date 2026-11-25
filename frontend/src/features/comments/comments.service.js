@@ -9,7 +9,10 @@ export async function getAll(filters = {}) {
   ])
   const usersById = new Map(users.map((user) => [user.id, user]))
   return records
-    .filter((comment) => !filters.postId || comment.postId === filters.postId)
+    .filter((comment) => (
+      (!filters.postId || comment.postId === filters.postId) &&
+      (!filters.issueId || comment.issueId === filters.issueId)
+    ))
     .map((comment) => {
       const author = usersById.get(comment.authorId)
       return {
@@ -25,27 +28,43 @@ export async function getById(id) {
 }
 
 export async function add(data, actorId) {
-  assertOnlyFields(data, ['postId', 'content'], 'Comment creation')
+  assertOnlyFields(data, ['postId', 'issueId', 'content'], 'Comment creation')
   assertText(data?.content, 'Comment', { maxLength: 2000 })
+  const hasPostId = Object.hasOwn(data, 'postId')
+  const hasIssueId = Object.hasOwn(data, 'issueId')
+  if (hasPostId === hasIssueId) {
+    throw new MockDataError('VALIDATION_ERROR', 'A comment must belong to exactly one Post or Class Issue.')
+  }
+  const targetId = hasPostId ? data.postId : data.issueId
+  assertText(targetId, hasPostId ? 'Post ID' : 'Class Issue ID')
+
   return transact((database, createId) => {
     const author = requireActor(
       database,
       actorId,
-      [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+      hasIssueId
+        ? Object.values(USER_ROLES)
+        : [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
     )
-    const post = requireRecord(database, 'posts', data.postId)
-    if (author.role === USER_ROLES.ASSOCIATION && post.associationId !== author.associationId) {
-      throw new MockDataError('FORBIDDEN', 'Associations can only comment on their own posts.')
+
+    if (hasPostId) {
+      const post = requireRecord(database, 'posts', targetId)
+      if (author.role === USER_ROLES.ASSOCIATION && post.associationId !== author.associationId) {
+        throw new MockDataError('FORBIDDEN', 'Associations can only comment on their own posts.')
+      }
+    } else {
+      requireRecord(database, 'issues', targetId)
     }
+
     const comment = {
       id: createId('comments'),
-      postId: data.postId,
       authorId: author.id,
       authorName: author.name,
       authorAvatar: author.avatarUrl || null,
       content: data.content.trim(),
       createdAt: new Date().toISOString(),
     }
+    comment[hasPostId ? 'postId' : 'issueId'] = targetId
     database.comments.push(comment)
     return comment
   })

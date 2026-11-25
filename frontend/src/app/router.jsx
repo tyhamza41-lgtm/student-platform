@@ -11,6 +11,9 @@ import AssociationEventsPage from '../features/events/pages/AssociationEventsPag
 import PostDetailsPage from '../features/posts/pages/PostDetailsPage'
 import PostFormPage from '../features/posts/pages/PostFormPage'
 import MyPostsPage from '../features/posts/pages/MyPostsPage'
+import IssuesListPage from '../features/issues/pages/IssuesListPage'
+import IssueDetailsPage from '../features/issues/pages/IssueDetailsPage'
+import IssueFormPage from '../features/issues/pages/IssueFormPage'
 import PublicProfilePage from '../features/profiles/pages/PublicProfilePage'
 import MockLoginPage from '../features/auth/pages/MockLoginPage'
 import { ROUTES } from '../constants/routes'
@@ -78,7 +81,11 @@ const router = createBrowserRouter([
           },
           {
             path: ROUTES.ISSUES,
-            element: <PlaceholderPage title="Class Issues" description="View and track class issues." />,
+            element: <IssuesListPage />,
+          },
+          {
+            path: ROUTES.ISSUE_DETAILS(':issueId'),
+            element: <IssueDetailsPage />,
           },
           {
             path: ROUTES.PROFILE,
@@ -108,7 +115,7 @@ const router = createBrowserRouter([
             path: ROUTES.REPRESENTATIVE.CREATE_ISSUE,
             element: (
               <RequireRepresentative>
-                <PlaceholderPage title="Create Class Issue" description="Submit a new class issue." />
+                <IssueFormPage />
               </RequireRepresentative>
             ),
           },
@@ -212,7 +219,15 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.ISSUES,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Class Issues (Director)" description="All class issues." />
+                <IssuesListPage directorMode />
+              </RequireRole>
+            ),
+          },
+          {
+            path: ROUTES.DIRECTOR.ISSUE_DETAILS(':issueId'),
+            element: (
+              <RequireRole roles={[USER_ROLES.DIRECTOR]}>
+                <IssueDetailsPage directorMode />
               </RequireRole>
             ),
           },

@@ -90,6 +90,23 @@ describe('application router', () => {
   })
 
   it.each([
+    ['student', { ...users.student, classId: 'class-ginf-2' }],
+    ['association', users.association],
+    ['Director', users.director],
+  ])('lets an authenticated %s browse and open Class Issues', async (_role, user) => {
+    const memoryRouter = await renderRoute('/issues', user)
+
+    expect(await screen.findByRole('heading', { name: 'Class Issues' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Climatiseur en panne dans la salle B12' })).toBeInTheDocument()
+    await userEvent.setup().click(
+      screen.getByRole('link', { name: 'View issue: Climatiseur en panne dans la salle B12' }),
+    )
+    expect(await screen.findByRole('heading', { name: 'Climatiseur en panne dans la salle B12' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Add a comment' })).toBeInTheDocument()
+    expect(memoryRouter.state.location.pathname).toBe('/issues/issue-1')
+  })
+
+  it.each([
     ['student', users.student, []],
     ['representative', users.representative, ['Create Post']],
     ['association', users.association, ['Create Post']],
@@ -196,7 +213,7 @@ describe('application router', () => {
     if (path === '/association/events/create') {
       expect(screen.getByRole('textbox', { name: 'Event title' })).toBeInTheDocument()
     } else {
-      expect(screen.getByText('Coming soon')).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Issue title' })).toBeInTheDocument()
     }
   })
 
@@ -229,6 +246,9 @@ describe('application router', () => {
   it.each([
     ['student', users.student, '/association/posts/create', '/feed'],
     ['student', users.student, '/association/events/create', '/feed'],
+    ['student', users.student, '/issues/create', '/feed'],
+    ['director', users.director, '/issues/create', '/director/dashboard'],
+    ['student', users.student, '/director/issues', '/feed'],
     ['student', users.student, '/director/posts/create', '/feed'],
     ['director', users.director, '/association/events/create', '/director/dashboard'],
     ['director', users.director, '/association/posts/create', '/director/dashboard'],
