@@ -1,13 +1,12 @@
 import NavigationIcon from '../../../components/navigation/NavigationIcon'
 import { isRepresentative } from '../../../constants/navigation'
-import { events as mockEvents } from '../../../mocks/data/events'
 import { users as mockUsers } from '../../../mocks/data/users'
 import { issues as mockIssues } from '../../../mocks/data/issues'
 
 const dashboardOpenedAt = Date.now()
 
 function StudentStats({
-  events = mockEvents,
+  events = [],
   users = mockUsers,
   issues = mockIssues,
   registeredEventIds = new Set(),

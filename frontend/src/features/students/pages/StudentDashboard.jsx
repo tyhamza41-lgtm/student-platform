@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import NavigationIcon from '../../../components/navigation/NavigationIcon'
 import { Button, Card } from '../../../components/ui'
 import { users } from '../../../mocks/data/users'
-import { events as mockEvents } from '../../../mocks/data/events'
 import * as postsService from '../../posts/posts.service'
+import * as eventsService from '../../events/events.service'
 import WelcomeSection from '../components/WelcomeSection'
 import StudentStats from '../components/StudentStats'
 import RecentPosts from '../components/RecentPosts'
@@ -39,27 +39,17 @@ function ClassInformation({ student, stacked = false }) {
   )
 }
 
-function StudentDashboard({ postsData, eventsData = mockEvents }) {
+function StudentDashboard({ postsData }) {
   const { currentUser } = useAuth()
   const [loadedPosts, setLoadedPosts] = useState(postsData ?? [])
   const [postsLoading, setPostsLoading] = useState(postsData === undefined)
   const [postsError, setPostsError] = useState('')
   const [postsReload, setPostsReload] = useState(0)
-  const [registrationRecords, setRegistrationRecords] = useState({})
-  const registeredEventIds = useMemo(() => {
-    const availableEventIds = new Set(eventsData.map((event) => event.id))
-    const registeredIds = new Set(
-      eventsData
-        .filter((event) => event.initiallyParticipating)
-        .map((event) => event.id),
-    )
-
-    Object.keys(registrationRecords).forEach((eventId) => {
-      if (availableEventIds.has(eventId)) registeredIds.add(eventId)
-    })
-
-    return registeredIds
-  }, [eventsData, registrationRecords])
+  const [loadedEvents, setLoadedEvents] = useState([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState('')
+  const [eventsReload, setEventsReload] = useState(0)
+  const [registeredEventIds, setRegisteredEventIds] = useState(new Set())
 
   useEffect(() => {
     if (postsData !== undefined) return undefined
@@ -81,14 +71,40 @@ function StudentDashboard({ postsData, eventsData = mockEvents }) {
     return () => { active = false }
   }, [postsData, currentUser?.role, postsReload])
 
+  useEffect(() => {
+    let active = true
+    async function loadEvents() {
+      try {
+        const canParticipate = currentUser?.role === 'STUDENT' && currentUser.isActive !== false
+        const [records, registrations] = await Promise.all([
+          eventsService.getAll({ status: 'PUBLISHED' }),
+          canParticipate ? eventsService.getMyRegistrations(currentUser.id) : Promise.resolve([]),
+        ])
+        if (active) {
+          setLoadedEvents(records)
+          setRegisteredEventIds(new Set(registrations.map((registration) => registration.eventId)))
+          setEventsError('')
+        }
+      } catch (error) {
+        if (active) setEventsError(error.message || 'Events could not be loaded.')
+      } finally {
+        if (active) setEventsLoading(false)
+      }
+    }
+    loadEvents()
+    return () => { active = false }
+  }, [currentUser?.id, currentUser?.isActive, currentUser?.role, eventsReload])
+
   const student = {
     ...developmentStudent,
     ...currentUser,
     name: currentUser?.name || developmentStudent?.name || 'Student',
     avatarUrl: currentUser?.avatarUrl || developmentStudent?.avatarUrl,
   }
+
   const hasPosts = loadedPosts.length > 0
-  const hasEvents = eventsData.length > 0
+  const hasEvents = loadedEvents.length > 0
+  const showEventsPanel = hasEvents || eventsLoading || Boolean(eventsError)
 
   function removePost(postId) {
     setLoadedPosts((current) => current.filter((post) => post.id !== postId))
@@ -122,14 +138,40 @@ function StudentDashboard({ postsData, eventsData = mockEvents }) {
     return null
   }
 
-  function registerForEvent(eventId, registration) {
-    if (registeredEventIds.has(eventId)) return
+  function updateRegisteredEvent(updatedEvent) {
+    setLoadedEvents((current) => current.map((event) => (
+      event.id === updatedEvent.id ? updatedEvent : event
+    )))
+    setRegisteredEventIds((current) => new Set(current).add(updatedEvent.id))
+  }
 
-    setRegistrationRecords((current) => (
-      current[eventId]
-        ? current
-        : { ...current, [eventId]: { ...registration, userId: currentUser?.id } }
-    ))
+  function renderEventsPanel(layout = 'stacked') {
+    if (eventsLoading) {
+      return <Card role="status" className="text-sm text-slate-500">Loading upcoming events…</Card>
+    }
+    if (eventsError) {
+      return (
+        <Card className="space-y-3">
+          <p role="alert" className="text-sm text-red-700">{eventsError}</p>
+          <Button size="sm" variant="outline" onClick={() => {
+            setEventsLoading(true)
+            setEventsError('')
+            setEventsReload((count) => count + 1)
+          }}>Try again</Button>
+        </Card>
+      )
+    }
+    if (hasEvents) {
+      return (
+        <UpcomingEvents
+          events={loadedEvents}
+          registeredEventIds={registeredEventIds}
+          onEventRegistered={updateRegisteredEvent}
+          layout={layout}
+        />
+      )
+    }
+    return null
   }
 
   return (
@@ -137,48 +179,37 @@ function StudentDashboard({ postsData, eventsData = mockEvents }) {
       <div className="space-y-4 sm:space-y-5">
         <WelcomeSection student={student} />
         <StudentStats
-          events={eventsData}
+          events={loadedEvents}
           registeredEventIds={registeredEventIds}
         />
       </div>
 
-      {hasPosts && hasEvents ? (
+      {hasPosts && showEventsPanel ? (
         <div
           data-dashboard-layout="feed-and-events"
           className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(292px,1fr)]"
         >
           {renderPosts()}
           <aside className="min-w-0 space-y-5" aria-label="Student dashboard information">
-            <UpcomingEvents
-              events={eventsData}
-              registeredEventIds={registeredEventIds}
-              onRegister={registerForEvent}
-            />
+            {renderEventsPanel()}
             <ClassInformation student={student} stacked />
           </aside>
         </div>
       ) : (
         <div
-          data-dashboard-layout={hasPosts ? 'posts-only' : hasEvents ? 'events-only' : 'empty'}
+          data-dashboard-layout={hasPosts ? 'posts-only' : showEventsPanel ? 'events-only' : 'empty'}
           className="min-w-0 space-y-6"
         >
           {(hasPosts || postsLoading || postsError) && renderPosts()}
-          {!hasPosts && hasEvents && !postsLoading && !postsError && (
+          {!hasPosts && showEventsPanel && !postsLoading && !postsError && (
             <DashboardEmptyState
               title="No campus posts yet"
               description="Class announcements and campus updates will appear here when they are shared."
               icon="file-text"
             />
           )}
-          {hasEvents && (
-            <UpcomingEvents
-              events={eventsData}
-              registeredEventIds={registeredEventIds}
-              onRegister={registerForEvent}
-              layout="wide"
-            />
-          )}
-          {!hasPosts && !hasEvents && !postsLoading && !postsError && (
+          {showEventsPanel && renderEventsPanel('wide')}
+          {!hasPosts && !hasEvents && !postsLoading && !postsError && !eventsLoading && !eventsError && (
             <div className="grid min-w-0 gap-5 md:grid-cols-2">
               <DashboardEmptyState
                 title="No campus posts yet"

@@ -17,6 +17,11 @@ export const EVENT_STATUS = Object.freeze({
   CANCELLED: 'CANCELLED',
 })
 
+export const NOTIFICATION_TYPES = Object.freeze({
+  EVENT_DELETED: 'EVENT_DELETED',
+  ISSUE_DELETED: 'ISSUE_DELETED',
+})
+
 const image = (photoId) => (
   `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=160&q=80`
 )
@@ -224,7 +229,6 @@ const data = {
       date: '2026-11-27T14:00:00',
       location: 'Amphithéâtre A',
       description: 'Échanges autour des usages responsables de l’intelligence artificielle dans les métiers du numérique.',
-      initiallyParticipating: false,
       participantCount: 48,
       participantAvatarIds: ['student-2', 'representative-1'],
       status: 'PUBLISHED',
@@ -238,7 +242,6 @@ const data = {
       date: '2026-12-03T09:00:00',
       location: 'FabLab ENSA',
       description: 'Une journée pour imaginer des solutions numériques au service de la transition écologique du campus.',
-      initiallyParticipating: true,
       participantCount: 32,
       participantAvatarIds: ['representative-1', 'student-2', 'student-1'],
       status: 'PUBLISHED',
@@ -277,6 +280,7 @@ const data = {
       status: ISSUE_STATUS.RESOLVED,
     },
   ],
+  notifications: [],
   idCounters: {},
 }
 

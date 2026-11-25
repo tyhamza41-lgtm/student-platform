@@ -20,9 +20,15 @@ beforeEach(async () => {
   await resetMockDatabase()
 })
 
-async function renderPostsRoute(path, user = authUsers.student, { eventsData = [] } = {}) {
+async function renderPostsRoute(path, user = authUsers.student, { clearEvents = true } = {}) {
+  if (clearEvents) {
+    await transact((database) => {
+      database.events = []
+      database.registrations = []
+    })
+  }
   const router = createMemoryRouter([
-    { path: '/feed', element: <StudentDashboard eventsData={eventsData} /> },
+    { path: '/feed', element: <StudentDashboard /> },
     { path: '/posts/create', element: <PostFormPage /> },
     { path: '/posts/:postId/edit', element: <PostFormPage /> },
     { path: '/posts/:postId', element: <PostDetailsPage /> },
@@ -64,12 +70,13 @@ describe('posts experience', () => {
     emptyView.unmount()
 
     localStorage.setItem('student-platform.mock-database.v1', '{invalid')
-    await renderPostsRoute('/feed')
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Stored mock data is not valid JSON/)
+    await renderPostsRoute('/feed', authUsers.student, { clearEvents: false })
+    const errors = await screen.findAllByRole('alert')
+    expect(errors.some((alert) => alert.textContent.includes('Stored mock data is not valid JSON'))).toBe(true)
 
     localStorage.clear()
     await resetMockDatabase()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
+    await userEvent.setup().click(screen.getAllByRole('button', { name: 'Try again' })[0])
     expect(await screen.findByRole('heading', { name: 'Latest announcements' })).toBeInTheDocument()
   })
 

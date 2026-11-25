@@ -193,7 +193,11 @@ describe('application router', () => {
 
     expect(memoryRouter.state.location.pathname).toBe(path)
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(screen.getByText('Coming soon')).toBeInTheDocument()
+    if (path === '/association/events/create') {
+      expect(screen.getByRole('textbox', { name: 'Event title' })).toBeInTheDocument()
+    } else {
+      expect(screen.getByText('Coming soon')).toBeInTheDocument()
+    }
   })
 
   it('keeps My Profile, Settings, and Sign out dropdown actions available', async () => {
@@ -226,6 +230,7 @@ describe('application router', () => {
     ['student', users.student, '/association/posts/create', '/feed'],
     ['student', users.student, '/association/events/create', '/feed'],
     ['student', users.student, '/director/posts/create', '/feed'],
+    ['director', users.director, '/association/events/create', '/director/dashboard'],
     ['director', users.director, '/association/posts/create', '/director/dashboard'],
     ['association', users.association, '/director/posts/create', '/feed'],
   ])('keeps a %s user out of the role-protected route %s', async (_role, user, path, destination) => {

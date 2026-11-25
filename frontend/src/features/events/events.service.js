@@ -8,6 +8,10 @@ import {
 } from '../../mocks/mockDatabase.js'
 import { EVENT_STATUS } from '../../mocks/seedData.js'
 import {
+  announceNotificationsChanged,
+  createModerationDeletionNotifications,
+} from '../notifications/notifications.service.js'
+import {
   assertOnlyFields,
   assertText,
   requireActor,
@@ -19,7 +23,6 @@ function assertCanManageEvent(database, event, actorId) {
   if (actor.isActive === false) {
     throw new MockDataError('FORBIDDEN', 'Inactive users cannot manage events.')
   }
-  if (actor.role === USER_ROLES.DIRECTOR) return actor
   if (
     actor.role === USER_ROLES.ASSOCIATION &&
     event.ownerType === USER_ROLES.ASSOCIATION &&
@@ -32,8 +35,15 @@ function assertCanManageEvent(database, event, actorId) {
 }
 
 function validateEventDate(value) {
-  if (!value || Number.isNaN(new Date(value).getTime())) {
-    throw new MockDataError('VALIDATION_ERROR', 'A valid event date is required.')
+  const timestamp = new Date(value).getTime()
+  if (!value || Number.isNaN(timestamp) || timestamp <= Date.now()) {
+    throw new MockDataError('VALIDATION_ERROR', 'Event date and time must be in the future.')
+  }
+}
+
+function assertEventImageUrl(value) {
+  if (value !== undefined && value !== null && (typeof value !== 'string' || value.length > 4_000_000)) {
+    throw new MockDataError('VALIDATION_ERROR', 'Event image must be text of at most 4 MB.')
   }
 }
 
@@ -50,39 +60,37 @@ export async function getById(id) {
   return getRecord('events', id)
 }
 
+export async function getMyRegistrations(userId) {
+  const database = await getMockDatabaseSnapshot()
+  requireActor(database, userId, [USER_ROLES.STUDENT])
+  return database.registrations.filter((registration) => registration.userId === userId)
+}
+
 export async function create(data, actorId) {
-  assertOnlyFields(data, ['title', 'description', 'date', 'location'], 'Event creation')
+  assertOnlyFields(data, ['title', 'description', 'date', 'location', 'imageUrl'], 'Event creation')
   assertText(data?.title, 'Event title', { maxLength: 180 })
   assertText(data?.description, 'Event description')
   assertText(data?.location, 'Event location', { maxLength: 240 })
   validateEventDate(data?.date)
+  assertEventImageUrl(data.imageUrl)
   return transact((database, createId) => {
     const actor = requireActor(
       database,
       actorId,
-      [USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+      [USER_ROLES.ASSOCIATION],
     )
-    let ownerType
-    let ownerId
-    if (actor.role === USER_ROLES.ASSOCIATION) {
-      const association = requireRecord(database, 'associations', actor.associationId)
-      if (!association.isActive) throw new MockDataError('FORBIDDEN', 'Inactive associations cannot publish events.')
-      ownerType = USER_ROLES.ASSOCIATION
-      ownerId = association.id
-    } else {
-      ownerType = USER_ROLES.DIRECTOR
-      ownerId = actor.id
-    }
+    const association = requireRecord(database, 'associations', actor.associationId)
+    if (!association.isActive) throw new MockDataError('FORBIDDEN', 'Inactive associations cannot publish events.')
     const event = {
       id: createId('events'),
       title: data.title.trim(),
       organizer: actor.name,
-      ownerType,
-      ownerId,
+      ownerType: USER_ROLES.ASSOCIATION,
+      ownerId: association.id,
       date: data.date,
       location: data.location.trim(),
       description: data.description.trim(),
-      initiallyParticipating: false,
+      imageUrl: data.imageUrl || null,
       participantCount: 0,
       participantAvatarIds: [],
       status: 'PUBLISHED',
@@ -95,21 +103,23 @@ export async function create(data, actorId) {
 }
 
 export async function update(id, data, actorId) {
-  assertOnlyFields(data, ['title', 'description', 'location', 'date', 'status'], 'Event update')
+  assertOnlyFields(data, ['title', 'description', 'location', 'date', 'status', 'imageUrl'], 'Event update')
   if (Object.hasOwn(data, 'title')) assertText(data.title, 'Event title', { maxLength: 180 })
   if (Object.hasOwn(data, 'description')) assertText(data.description, 'Event description')
   if (Object.hasOwn(data, 'location')) assertText(data.location, 'Event location', { maxLength: 240 })
   if (Object.hasOwn(data, 'date')) validateEventDate(data.date)
+  if (Object.hasOwn(data, 'imageUrl')) assertEventImageUrl(data.imageUrl)
   if (Object.hasOwn(data, 'status') && !Object.values(EVENT_STATUS).includes(data.status)) {
     throw new MockDataError('VALIDATION_ERROR', `Unsupported event status "${data.status}".`)
   }
   return transact((database) => {
     const event = requireRecord(database, 'events', id)
     assertCanManageEvent(database, event, actorId)
-    for (const field of ['title', 'description', 'location', 'date', 'status']) {
+    for (const field of ['title', 'description', 'location', 'date', 'status', 'imageUrl']) {
       if (Object.hasOwn(data, field)) event[field] = field === 'status'
         ? data[field]
-        : typeof data[field] === 'string' ? data[field].trim() : data[field]
+        : field === 'imageUrl' ? data[field] || null
+          : typeof data[field] === 'string' ? data[field].trim() : data[field]
     }
     event.updatedAt = new Date().toISOString()
     return event
@@ -117,15 +127,33 @@ export async function update(id, data, actorId) {
 }
 
 export async function deleteEvent(id, actorId) {
-  return transact((database) => {
+  const { event: deletedEvent, wasModerated } = await transact((database, createId) => {
     const event = requireRecord(database, 'events', id)
-    assertCanManageEvent(database, event, actorId)
-    if (database.registrations.some((registration) => registration.eventId === id)) {
-      throw new MockDataError('CONFLICT', 'Events with registrations cannot be deleted.')
+    const actor = requireActor(
+      database,
+      actorId,
+      [USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+    )
+    if (actor.role === USER_ROLES.DIRECTOR) {
+      createModerationDeletionNotifications(database, createId, {
+        itemType: 'EVENT',
+        itemId: event.id,
+        itemTitle: event.title,
+        directorName: actor.name,
+        deletedAt: new Date().toISOString(),
+      })
+      database.registrations = database.registrations.filter((registration) => registration.eventId !== id)
+    } else {
+      assertCanManageEvent(database, event, actorId)
+      if (database.registrations.some((registration) => registration.eventId === id)) {
+        throw new MockDataError('CONFLICT', 'Events with registrations cannot be deleted.')
+      }
     }
     database.events = database.events.filter((item) => item.id !== id)
-    return event
+    return { event, wasModerated: actor.role === USER_ROLES.DIRECTOR }
   })
+  if (wasModerated) announceNotificationsChanged()
+  return deletedEvent
 }
 
 export async function register(eventId, userId, data = {}) {
@@ -133,11 +161,15 @@ export async function register(eventId, userId, data = {}) {
     const user = requireActor(
       database,
       userId,
-      [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+      [USER_ROLES.STUDENT],
     )
     const event = requireRecord(database, 'events', eventId)
     if (event.status !== 'PUBLISHED') {
       throw new MockDataError('CONFLICT', 'This event is not open for registration.')
+    }
+    const eventTimestamp = new Date(event.date).getTime()
+    if (Number.isNaN(eventTimestamp) || eventTimestamp <= Date.now()) {
+      throw new MockDataError('CONFLICT', 'Registration is closed for invalid or past events.')
     }
     if (database.registrations.some((item) => item.eventId === eventId && item.userId === userId)) {
       throw new MockDataError('CONFLICT', 'This user is already registered for the event.')
@@ -169,7 +201,7 @@ export async function cancelRegistration(eventId, userId) {
     requireActor(
       database,
       userId,
-      [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+      [USER_ROLES.STUDENT],
     )
     const event = requireRecord(database, 'events', eventId)
     const registration = database.registrations.find((item) => item.eventId === eventId && item.userId === userId)
@@ -187,20 +219,14 @@ export async function getRegistrations(eventId, actorId) {
   const actor = requireActor(
     database,
     actorId,
-    [USER_ROLES.DIRECTOR, USER_ROLES.ASSOCIATION],
+    [USER_ROLES.ASSOCIATION],
   )
-  const association = actor.role === USER_ROLES.ASSOCIATION
-    ? database.associations.find((item) => item.id === actor.associationId)
-    : null
   if (
-    actor.role !== USER_ROLES.DIRECTOR &&
-    (
-      actor.associationId !== event.ownerId ||
-      event.ownerType !== USER_ROLES.ASSOCIATION ||
-      !association?.isActive
-    )
+    actor.associationId !== event.ownerId ||
+    event.ownerType !== USER_ROLES.ASSOCIATION ||
+    !database.associations.find((item) => item.id === actor.associationId)?.isActive
   ) {
-    throw new MockDataError('FORBIDDEN', 'Only the event owner or a director can view its registrations.')
+    throw new MockDataError('FORBIDDEN', 'Only the owning Association can view event registrations.')
   }
   return database.registrations.filter((registration) => registration.eventId === eventId)
 }

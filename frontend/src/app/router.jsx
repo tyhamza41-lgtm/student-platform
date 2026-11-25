@@ -4,6 +4,10 @@ import MainLayout from '../layouts/MainLayout'
 import PublicLayout from '../layouts/PublicLayout'
 import PlaceholderPage from '../components/common/PlaceholderPage'
 import StudentDashboard from '../features/students/pages/StudentDashboard'
+import EventsListPage from '../features/events/pages/EventsListPage'
+import EventDetailsPage from '../features/events/pages/EventDetailsPage'
+import EventFormPage from '../features/events/pages/EventFormPage'
+import AssociationEventsPage from '../features/events/pages/AssociationEventsPage'
 import PostDetailsPage from '../features/posts/pages/PostDetailsPage'
 import PostFormPage from '../features/posts/pages/PostFormPage'
 import MyPostsPage from '../features/posts/pages/MyPostsPage'
@@ -66,7 +70,11 @@ const router = createBrowserRouter([
           },
           {
             path: ROUTES.EVENTS,
-            element: <PlaceholderPage title="Events" description="Browse and register for events." />,
+            element: <EventsListPage />,
+          },
+          {
+            path: ROUTES.EVENT_DETAILS(':eventId'),
+            element: <EventDetailsPage />,
           },
           {
             path: ROUTES.ISSUES,
@@ -124,7 +132,7 @@ const router = createBrowserRouter([
             path: ROUTES.ASSOCIATION.MY_EVENTS,
             element: (
               <RequireRole roles={[USER_ROLES.ASSOCIATION]}>
-                <PlaceholderPage title="Manage Events" description="Association events." />
+                <AssociationEventsPage />
               </RequireRole>
             ),
           },
@@ -140,7 +148,15 @@ const router = createBrowserRouter([
             path: ROUTES.ASSOCIATION.CREATE_EVENT,
             element: (
               <RequireRole roles={[USER_ROLES.ASSOCIATION]}>
-                <PlaceholderPage title="Create Event" description="Publish a new event." />
+                <EventFormPage />
+              </RequireRole>
+            ),
+          },
+          {
+            path: ROUTES.ASSOCIATION.EDIT_EVENT(':eventId'),
+            element: (
+              <RequireRole roles={[USER_ROLES.ASSOCIATION]}>
+                <EventFormPage />
               </RequireRole>
             ),
           },

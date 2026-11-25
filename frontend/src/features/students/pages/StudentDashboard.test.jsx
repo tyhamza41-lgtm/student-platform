@@ -7,17 +7,22 @@ import { AuthSession } from '../../../../tests/auth-test-utils'
 import { users } from '../../../../tests/auth-fixtures'
 import StudentDashboard from './StudentDashboard'
 import { posts } from '../../../mocks/data/posts'
-import { events } from '../../../mocks/data/events'
 import { issues } from '../../../mocks/data/issues'
 import { comments } from '../../../mocks/data/comments'
-import { resetMockDatabase } from '../../../mocks/mockDatabase'
+import { resetMockDatabase, transact } from '../../../mocks/mockDatabase'
 
 beforeEach(async () => {
   localStorage.clear()
   await resetMockDatabase()
 })
 
-async function renderDashboard({ postsData = posts, eventsData = events } = {}) {
+async function renderDashboard({ postsData = posts, includeEvents = true } = {}) {
+  if (!includeEvents) {
+    await transact((database) => {
+      database.events = []
+      database.registrations = []
+    })
+  }
   const result = render(
     <MemoryRouter initialEntries={['/feed']}>
       <AuthProvider>
@@ -25,7 +30,7 @@ async function renderDashboard({ postsData = posts, eventsData = events } = {}) 
           <Routes>
             <Route
               path="/feed"
-              element={<StudentDashboard postsData={postsData} eventsData={eventsData} />}
+              element={<StudentDashboard postsData={postsData} />}
             />
             <Route path="/events" element={<h1>Events page</h1>} />
             <Route path="/issues" element={<h1>Class issues page</h1>} />
@@ -164,12 +169,12 @@ describe('StudentDashboard', () => {
     const user = userEvent.setup()
     await renderDashboard()
 
-    const eventHeading = screen.getByRole('heading', { name: events[0].title })
+    const eventHeading = await screen.findByRole('heading', { name: 'Conférence IA responsable' })
     const eventCard = eventHeading.closest('article')
     const participateButton = within(eventCard).getByRole('button', { name: 'Participate' })
 
     await user.click(participateButton)
-    const dialog = await screen.findByRole('dialog', { name: `Register for ${events[0].title}` })
+    const dialog = await screen.findByRole('dialog', { name: 'Register for Conférence IA responsable' })
     const phone = within(dialog).getByRole('textbox', { name: 'Phone number' })
     const submit = within(dialog).getByRole('button', { name: 'Confirm registration' })
 
@@ -195,7 +200,7 @@ describe('StudentDashboard', () => {
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    const secondEventHeading = screen.getByRole('heading', { name: events[1].title })
+    const secondEventHeading = screen.getByRole('heading', { name: 'Hackathon Green Campus' })
     const secondEventCard = secondEventHeading.closest('article')
     expect(within(secondEventCard).getByText('You’re registered')).toBeInTheDocument()
     expect(within(secondEventCard).queryByRole('button', { name: 'Participate' })).not.toBeInTheDocument()
@@ -215,14 +220,14 @@ describe('StudentDashboard', () => {
   })
 
   it('uses the available width when only posts or only events exist', async () => {
-    const { container: eventsOnly } = await renderDashboard({ postsData: [], eventsData: events })
+    const { container: eventsOnly } = await renderDashboard({ postsData: [] })
     expect(screen.queryByRole('heading', { name: 'Latest announcements' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Upcoming events' })).toBeInTheDocument()
     expect(eventsOnly.querySelector('[data-dashboard-layout="events-only"]')).toBeInTheDocument()
   })
 
   it('renders a full-width feed and no empty events section when posts exist alone', async () => {
-    await renderDashboard({ postsData: posts, eventsData: [] })
+    await renderDashboard({ postsData: posts, includeEvents: false })
 
     expect(screen.getByRole('heading', { name: 'Latest announcements' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Upcoming events' })).not.toBeInTheDocument()
@@ -230,7 +235,7 @@ describe('StudentDashboard', () => {
   })
 
   it('shows contextual empty states when neither posts nor events exist', async () => {
-    await renderDashboard({ postsData: [], eventsData: [] })
+    await renderDashboard({ postsData: [], includeEvents: false })
 
     expect(screen.getByText('No campus posts yet')).toBeInTheDocument()
     expect(screen.getByText('No upcoming events')).toBeInTheDocument()

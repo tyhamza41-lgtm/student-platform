@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { USER_ROLES } from '../constants/roles.js'
 import { ISSUE_STATUS } from '../mocks/seedData.js'
-import { getMockDatabaseSnapshot, MockDataError, resetMockDatabase } from '../mocks/mockDatabase.js'
+import { getMockDatabaseSnapshot, MockDataError, resetMockDatabase, transact } from '../mocks/mockDatabase.js'
 import * as associations from './associations/associations.service.js'
 import * as comments from './comments/comments.service.js'
 import * as director from './director/director.service.js'
 import * as events from './events/events.service.js'
 import * as issues from './issues/issues.service.js'
+import * as notifications from './notifications/notifications.service.js'
 import * as posts from './posts/posts.service.js'
 import * as profiles from './profiles/profiles.service.js'
 import * as reactions from './reactions/reactions.service.js'
@@ -178,27 +179,149 @@ describe('mock domain services', () => {
       description: 'An evening of student work.',
       date: '2026-12-10T18:00:00',
       location: 'Main Hall',
+      imageUrl: 'data:image/png;base64,ZmFrZQ==',
     }, associationId)
     expect(event).toMatchObject({ ownerType: 'ASSOCIATION', ownerId: associationId })
+    expect(event.imageUrl).toContain('data:image/png;base64')
     await expectServiceError(events.update(event.id, { title: 'Unauthorized' }, 'student-1'), 'FORBIDDEN')
-    expect((await events.update(event.id, { title: 'Annual arts showcase' }, associationId)).title)
-      .toBe('Annual arts showcase')
+    expect(await events.update(event.id, { title: 'Annual arts showcase', imageUrl: null }, associationId))
+      .toMatchObject({ title: 'Annual arts showcase', imageUrl: null })
+    await expectServiceError(events.update('event-1', { title: 'Director edit' }, directorId), 'FORBIDDEN')
+    await expectServiceError(events.deleteEvent('event-1', associationId), 'FORBIDDEN')
 
     const registration = await events.register('event-1', 'student-1', {
       phone: '+212 6 55 44 33 22',
       message: 'I will arrive early.',
     })
     expect(registration).toMatchObject({ eventId: 'event-1', userId: 'student-1' })
-    expect((await events.getRegistrations('event-1', directorId)).some(({ id }) => id === registration.id)).toBe(true)
+    expect(await events.getMyRegistrations('student-1')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: registration.id })]),
+    )
     expect((await events.getById('event-1')).participantCount).toBe(49)
     await expectServiceError(events.register('event-1', 'student-1'), 'CONFLICT')
     await expectServiceError(events.register('event-1', 'student-3', { phone: '555' }), 'VALIDATION_ERROR')
+    const representativeRegistration = await events.register('event-1', representativeId, {
+      phone: '+212 6 55 44 33 22',
+    })
+    expect(representativeRegistration.userId).toBe(representativeId)
+    await events.cancelRegistration('event-1', representativeId)
     expect((await events.cancelRegistration('event-1', 'student-1')).id).toBe(registration.id)
     expect((await events.getById('event-1')).participantCount).toBe(48)
     expect(await events.cancelRegistration('event-1', 'student-1')).toBeNull()
+    expect(await events.getMyRegistrations('student-1')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventId: 'event-2', userId: 'student-1' })]),
+    )
+    await expectServiceError(events.getMyRegistrations(associationId), 'FORBIDDEN')
+    await expectServiceError(events.register('event-1', associationId, { phone: '+212 6 55 44 33 22' }), 'FORBIDDEN')
+    await expectServiceError(events.register('event-1', directorId, { phone: '+212 6 55 44 33 22' }), 'FORBIDDEN')
+    await expectServiceError(events.cancelRegistration('event-1', directorId), 'FORBIDDEN')
     await expectServiceError(events.getRegistrations('event-1', 'student-1'), 'FORBIDDEN')
-    await expectServiceError(events.deleteEvent('event-2', directorId), 'CONFLICT')
+    await expectServiceError(events.deleteEvent('event-2', 'association-2'), 'CONFLICT')
+    await expectServiceError(events.create({
+      title: 'Director event',
+      description: 'Not allowed.',
+      date: '2026-12-10T18:00:00',
+      location: 'Main Hall',
+    }, directorId), 'FORBIDDEN')
+    await expectServiceError(events.getRegistrations('event-2', directorId), 'FORBIDDEN')
     await expectServiceError(events.create({ title: 'Incomplete' }, associationId), 'VALIDATION_ERROR')
+    await expectServiceError(events.create({
+      title: 'Past event',
+      description: 'This event has already passed.',
+      date: new Date(Date.now() - 60_000).toISOString(),
+      location: 'Main Hall',
+    }, associationId), 'VALIDATION_ERROR')
+    await transact((database) => {
+      database.events.find((item) => item.id === 'event-1').date = new Date(Date.now() - 60_000).toISOString()
+    })
+    await expectServiceError(events.register('event-1', 'student-1', {
+      phone: '+212 6 55 44 33 22',
+    }), 'CONFLICT')
+    await transact((database) => {
+      database.events.find((item) => item.id === 'event-1').date = 'invalid-date'
+    })
+    await expectServiceError(events.register('event-1', 'student-1', {
+      phone: '+212 6 55 44 33 22',
+    }), 'CONFLICT')
+  })
+
+  it('lets the Director delete any event and atomically removes registrations and notifies every user', async () => {
+    const eventTitle = (await events.getById('event-2')).title
+    const usersBefore = await users.getAll()
+    const deleted = await events.deleteEvent('event-2', directorId)
+    const snapshot = await getMockDatabaseSnapshot()
+
+    expect(deleted.title).toBe(eventTitle)
+    expect(snapshot.events.some((event) => event.id === 'event-2')).toBe(false)
+    expect(snapshot.registrations.some((registration) => registration.eventId === 'event-2')).toBe(false)
+    const eventNotifications = snapshot.notifications.filter((notification) => notification.itemId === 'event-2')
+    expect(eventNotifications).toHaveLength(usersBefore.length)
+    expect(eventNotifications.map((notification) => notification.recipientId).sort())
+      .toEqual(usersBefore.map((user) => user.id).sort())
+    expect(eventNotifications.every((notification) => (
+      notification.type === 'EVENT_DELETED' &&
+      notification.itemType === 'EVENT' &&
+      notification.itemTitle === eventTitle &&
+      notification.directorName === 'Dr. Nadia Alaoui' &&
+      notification.message.includes(eventTitle) &&
+      notification.message.includes('Dr. Nadia Alaoui') &&
+      !notification.readAt
+    ))).toBe(true)
+    expect(Number.isNaN(new Date(eventNotifications[0].deletedAt).getTime())).toBe(false)
+    expect(eventNotifications[0].createdAt).toBe(eventNotifications[0].deletedAt)
+    const deletedDate = new Date(eventNotifications[0].deletedAt)
+    expect(eventNotifications[0].message).toContain(new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(deletedDate))
+    expect(eventNotifications[0].message).toContain(new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(deletedDate))
+  })
+
+  it('integrates issue deletion notifications and creates none for failed moderation', async () => {
+    await expectServiceError(events.deleteEvent('event-2', associationId), 'FORBIDDEN')
+    await expectServiceError(events.deleteEvent('missing-event', directorId), 'NOT_FOUND')
+    await expectServiceError(issues.deleteIssue('issue-1', 'student-1'), 'FORBIDDEN')
+    expect((await getMockDatabaseSnapshot()).notifications).toEqual([])
+
+    const deletedIssue = await issues.deleteIssue('issue-1', directorId)
+    const snapshot = await getMockDatabaseSnapshot()
+    const issueNotifications = snapshot.notifications.filter((notification) => notification.itemId === deletedIssue.id)
+
+    expect(snapshot.issues.some((issue) => issue.id === deletedIssue.id)).toBe(false)
+    expect(issueNotifications).toHaveLength(snapshot.users.length)
+    expect(issueNotifications.every((notification) => (
+      notification.type === 'ISSUE_DELETED' &&
+      notification.itemType === 'CLASS_ISSUE' &&
+      notification.itemTitle === deletedIssue.title &&
+      notification.message.includes(deletedIssue.title) &&
+      notification.message.includes('class issue')
+    ))).toBe(true)
+  })
+
+  it('keeps notification reads private to each recipient and persists individual and bulk read state', async () => {
+    await events.deleteEvent('event-1', directorId)
+    await issues.deleteIssue('issue-1', directorId)
+    const studentNotifications = await notifications.getAllForUser('student-1')
+    const otherStudentNotifications = await notifications.getAllForUser('student-2')
+    expect(studentNotifications).toHaveLength(2)
+    expect(otherStudentNotifications).toHaveLength(2)
+    expect(studentNotifications.every(({ recipientId }) => recipientId === 'student-1')).toBe(true)
+    expect(otherStudentNotifications.every(({ recipientId }) => recipientId === 'student-2')).toBe(true)
+    await expectServiceError(
+      notifications.markAsRead(otherStudentNotifications[0].id, 'student-1'),
+      'FORBIDDEN',
+    )
+
+    const marked = await notifications.markAsRead(studentNotifications[0].id, 'student-1')
+    expect(marked.readAt).toBeTruthy()
+    expect((await notifications.getAllForUser('student-1'))[0].readAt).toBe(marked.readAt)
+    const markedAll = await notifications.markAllAsRead('student-1')
+    expect(markedAll.every((notification) => notification.readAt)).toBe(true)
+    expect((await notifications.getAllForUser('student-2'))[0].readAt).toBeNull()
   })
 
   it('allows only an active assigned representative to create an issue', async () => {

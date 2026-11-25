@@ -1,81 +1,43 @@
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import { Avatar, Badge, Button, Card, FormField, Input, Modal, Textarea } from '../../../components/ui'
-import { events as mockEvents } from '../../../mocks/data/events'
-import { users as mockUsers } from '../../../mocks/data/users'
+import { Avatar, Badge, Button, Card } from '../../../components/ui'
+import { Link } from 'react-router'
+import { ROUTES } from '../../../constants/routes'
+import { USER_ROLES } from '../../../constants/roles'
+import * as usersService from '../../users/users.service'
+import EventRegistrationDialog from '../../events/components/EventRegistrationDialog'
 import { formatDate } from '../../../utils/formatDate'
 
-function isValidPhoneNumber(value) {
-  const phone = value.trim()
-  const digits = phone.replace(/\D/g, '')
-  return /^\+?[\d\s().-]+$/.test(phone) && digits.length >= 7 && digits.length <= 15
-}
+const dashboardLoadedAt = Date.now()
 
 function UpcomingEvents({
-  events = mockEvents,
+  events = [],
   registeredEventIds = new Set(),
-  onRegister,
+  onEventRegistered,
   layout = 'stacked',
 }) {
   const { currentUser } = useAuth()
   const [selectedEvent, setSelectedEvent] = useState(null)
-  const [phone, setPhone] = useState('')
-  const [message, setMessage] = useState('')
-  const [phoneError, setPhoneError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [hasSubmitted, setHasSubmitted] = useState(false)
-  const phoneInputRef = useRef(null)
+  const [users, setUsers] = useState([])
+  const [usersError, setUsersError] = useState('')
 
-  if (events.length === 0) return null
-
-  function openRegistration(event) {
-    setSelectedEvent(event)
-    setPhone('')
-    setMessage('')
-    setPhoneError('')
-    setHasSubmitted(false)
-  }
-
-  function closeRegistration() {
-    if (isSubmitting) return
-    setSelectedEvent(null)
-    setPhone('')
-    setMessage('')
-    setPhoneError('')
-    setHasSubmitted(false)
-  }
-
-  async function submitRegistration(event) {
-    event.preventDefault()
-
-    if (!selectedEvent || registeredEventIds.has(selectedEvent.id)) return
-
-    if (!phone.trim()) {
-      setPhoneError('Enter your phone number to register.')
-      phoneInputRef.current?.focus()
-      return
-    }
-
-    if (!isValidPhoneNumber(phone)) {
-      setPhoneError('Enter a valid phone number with 7 to 15 digits.')
-      phoneInputRef.current?.focus()
-      return
-    }
-
-    setPhoneError('')
-    setIsSubmitting(true)
-    await new Promise((resolve) => window.setTimeout(resolve, 150))
-    onRegister?.(selectedEvent.id, {
-      phone: phone.trim(),
-      message: message.trim(),
-    })
-    setIsSubmitting(false)
-    setHasSubmitted(true)
-  }
+  useEffect(() => {
+    let active = true
+    usersService.getAll()
+      .then((records) => {
+        if (active) setUsers(records)
+      })
+      .catch((error) => {
+        if (active) setUsersError(error.message || 'Participant profiles could not be loaded.')
+      })
+    return () => { active = false }
+  }, [])
 
   const eventListClassName = layout === 'wide'
     ? 'grid min-w-0 gap-4 sm:grid-cols-2'
     : 'min-w-0 space-y-4'
+
+  if (events.length === 0) return null
 
   return (
     <>
@@ -91,10 +53,8 @@ function UpcomingEvents({
         <div className={eventListClassName}>
           {events.map((event) => {
             const isRegistered = registeredEventIds.has(event.id)
-            const participantCount = event.participantCount +
-              (isRegistered && !event.initiallyParticipating ? 1 : 0)
             const participants = (event.participantAvatarIds || [])
-              .map((avatarId) => mockUsers.find((user) => user.id === avatarId))
+              .map((avatarId) => users.find((user) => user.id === avatarId))
               .filter(Boolean)
 
             if (
@@ -108,7 +68,7 @@ function UpcomingEvents({
             return (
               <article
                 key={event.id}
-                className="flex min-w-0 flex-col rounded-xl border border-slate-100 bg-slate-50/70 p-4"
+                className="flex min-w-0 flex-col rounded-xl border border-slate-300 bg-slate-50/70 p-4 "
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -136,12 +96,15 @@ function UpcomingEvents({
                 </dl>
 
                 <p className="mt-4 text-xs leading-6 text-slate-600">{event.description}</p>
+                {usersError && (
+                  <p role="alert" className="mt-3 text-xs text-red-700">{usersError}</p>
+                )}
 
                 <div className="mt-4 border-t border-slate-200/70 pt-3.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                     <div
                       role="group"
-                      aria-label={`${participantCount} event participants`}
+                      aria-label={`${event.participantCount ?? 0} event participants`}
                       className="flex shrink-0 items-center -space-x-2"
                     >
                       {participants.slice(0, 4).map((participant) => (
@@ -156,25 +119,30 @@ function UpcomingEvents({
                       ))}
                     </div>
                     <p className="min-w-0 text-xs font-semibold text-slate-600">
-                      {participantCount} participants
+                      {event.participantCount ?? 0} participants
                     </p>
                   </div>
 
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <Link
+                      to={ROUTES.EVENT_DETAILS(event.id)}
+                      className="inline-flex min-h-9 items-center rounded-lg px-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    >
+                      Event details
+                    </Link>
                     {isRegistered ? (
-                      <p className="text-xs font-medium text-emerald-700" role="status">
-                        You’re registered
-                      </p>
-                    ) : (
+                      <p className="text-xs font-medium text-emerald-700" role="status">You’re registered</p>
+                    ) : currentUser?.role === USER_ROLES.STUDENT && currentUser.isActive !== false &&
+                      event.status !== 'CANCELLED' && new Date(event.date).getTime() > dashboardLoadedAt ? (
                       <Button
                         variant="primary"
                         size="sm"
                         className="h-9"
-                        onClick={() => openRegistration(event)}
+                        onClick={() => setSelectedEvent(event)}
                       >
                         Participate
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </article>
@@ -183,83 +151,14 @@ function UpcomingEvents({
         </div>
       </Card>
 
-      <Modal
-        isOpen={Boolean(selectedEvent)}
-        onClose={isSubmitting ? undefined : closeRegistration}
-        title={hasSubmitted ? 'Registration confirmed' : `Register for ${selectedEvent?.title ?? 'event'}`}
-        description={hasSubmitted ? undefined : 'Share your phone number with the event organizer.'}
-        initialFocusRef={phoneInputRef}
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
-      >
-        {selectedEvent && (
-          hasSubmitted ? (
-            <div className="space-y-5">
-              <div role="status" aria-live="polite" className="rounded-xl bg-emerald-50 p-4">
-                <p className="font-semibold text-emerald-800">
-                  You’re registered for {selectedEvent.title}.
-                </p>
-                <p className="mt-1 text-sm leading-5 text-emerald-700">
-                  The event participant count has been updated.
-                </p>
-              </div>
-              <div className="flex justify-end">
-                <Button onClick={closeRegistration}>Done</Button>
-              </div>
-            </div>
-          ) : (
-            <form noValidate onSubmit={submitRegistration} className="space-y-5">
-              <FormField
-                label="Phone number"
-                required
-                error={phoneError}
-                helperText={phoneError ? undefined : 'Used by the organizer to coordinate this event.'}
-              >
-                <Input
-                  ref={phoneInputRef}
-                  type="tel"
-                  name="phone"
-                  autoComplete="tel"
-                  inputMode="tel"
-                  placeholder="+212 6 12 34 56 78"
-                  value={phone}
-                  onChange={(event) => {
-                    setPhone(event.target.value)
-                    setPhoneError('')
-                  }}
-                  required
-                />
-              </FormField>
-
-              <FormField
-                label="Message (optional)"
-                helperText="Add a short note for the organizer, if needed."
-              >
-                <Textarea
-                  name="message"
-                  rows={3}
-                  maxLength={280}
-                  placeholder="Anything the organizer should know?"
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                />
-              </FormField>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
-                <Button
-                  variant="outline"
-                  onClick={closeRegistration}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Registering…' : 'Confirm registration'}
-                </Button>
-              </div>
-            </form>
-          )
-        )}
-      </Modal>
+      {selectedEvent && (
+        <EventRegistrationDialog
+          event={selectedEvent}
+          userId={currentUser.id}
+          onClose={() => setSelectedEvent(null)}
+          onRegistered={(updatedEvent) => onEventRegistered?.(updatedEvent)}
+        />
+      )}
     </>
   )
 }

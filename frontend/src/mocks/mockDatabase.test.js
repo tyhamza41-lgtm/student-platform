@@ -34,6 +34,7 @@ describe('mock database', () => {
       registrations,
       issues,
     }
+    expect(snapshot.notifications).toEqual([])
 
     for (const [name, records] of Object.entries(collections)) {
       expect(snapshot[name]).toEqual(records)
@@ -105,7 +106,7 @@ describe('mock database', () => {
   it('persists mutations in localStorage and reset restores the exact seed', async () => {
     await getMockDatabaseSnapshot()
     const stored = JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY))
-    expect(stored.version).toBe(1)
+    expect(stored.version).toBe(2)
     stored.database.posts[0].content = 'Persisted edit'
     localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(stored))
 
@@ -114,6 +115,22 @@ describe('mock database', () => {
     const resetData = await resetMockDatabase()
     expect(resetData).toEqual(seedData)
     expect(await getMockDatabaseSnapshot()).toEqual(seedData)
+  })
+
+  it('migrates version 1 storage without losing existing records', async () => {
+    const legacyDatabase = JSON.parse(JSON.stringify(seedData))
+    delete legacyDatabase.notifications
+    legacyDatabase.posts[0].content = 'Keep this legacy post'
+    localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      database: legacyDatabase,
+    }))
+
+    const migrated = await getMockDatabaseSnapshot()
+
+    expect(migrated.posts[0].content).toBe('Keep this legacy post')
+    expect(migrated.notifications).toEqual([])
+    expect(JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY)).version).toBe(2)
   })
 
   it('reports corrupt persisted data and allows an explicit reset', async () => {

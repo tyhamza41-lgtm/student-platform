@@ -9,6 +9,7 @@ import BrandMark from './BrandMark'
 import BrandWordmark from './BrandWordmark'
 import UserSearch from './UserSearch'
 import { cn } from '../../utils/cn'
+import NotificationsPopover from '../../features/notifications/components/NotificationsPopover'
 
 function Topbar() {
   const { currentUser, logout } = useAuth()
@@ -64,18 +65,7 @@ function Topbar() {
 
       {/* Right-side actions */}
       <div className="flex items-center gap-1.5">
-        {/* Notifications placeholder */}
-        <button
-          type="button"
-          aria-label="Notifications"
-          className={cn(
-            'relative inline-flex items-center justify-center rounded-lg p-2 text-slate-500',
-            'transition-colors hover:bg-slate-100 hover:text-slate-800',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-          )}
-        >
-          <NavigationIcon name="bell" />
-        </button>
+        <NotificationsPopover />
 
         {/* User account dropdown */}
         {currentUser ? (

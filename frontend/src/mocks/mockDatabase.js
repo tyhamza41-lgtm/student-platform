@@ -1,13 +1,14 @@
 import {
   EVENT_STATUS,
   ISSUE_STATUS,
+  NOTIFICATION_TYPES,
   REACTION_TYPES,
   seedData,
 } from './seedData.js'
 import { USER_ROLES, REPRESENTATIVE_STATUS } from '../constants/roles.js'
 
 export const MOCK_STORAGE_KEY = 'student-platform.mock-database.v1'
-const MOCK_DATABASE_VERSION = 1
+const MOCK_DATABASE_VERSION = 2
 const COLLECTIONS = [
   'users',
   'classes',
@@ -18,6 +19,7 @@ const COLLECTIONS = [
   'events',
   'registrations',
   'issues',
+  'notifications',
 ]
 const ID_PREFIXES = {
   users: 'user',
@@ -29,6 +31,7 @@ const ID_PREFIXES = {
   events: 'event',
   registrations: 'registration',
   issues: 'issue',
+  notifications: 'notification',
 }
 
 export class MockDataError extends Error {
@@ -224,6 +227,24 @@ function assertDatabaseIntegrity(database) {
     }
   }
 
+  for (const notification of database.notifications) {
+    requireReference('users', notification.recipientId, `Notification "${notification.id}"`)
+    if (!Object.values(NOTIFICATION_TYPES).includes(notification.type)) {
+      fail('INVALID_DATABASE', `Notification "${notification.id}" has an invalid type.`)
+    }
+    if (
+      !['EVENT', 'CLASS_ISSUE'].includes(notification.itemType) ||
+      typeof notification.itemId !== 'string' ||
+      typeof notification.itemTitle !== 'string' ||
+      typeof notification.directorName !== 'string' ||
+      typeof notification.message !== 'string' ||
+      Number.isNaN(new Date(notification.deletedAt).getTime()) ||
+      (notification.readAt !== null && Number.isNaN(new Date(notification.readAt).getTime()))
+    ) {
+      fail('INVALID_DATABASE', `Notification "${notification.id}" is missing moderation details.`)
+    }
+  }
+
   if (!database.idCounters || typeof database.idCounters !== 'object') {
     fail('INVALID_DATABASE', 'Mock database id counters are missing.')
   }
@@ -250,7 +271,17 @@ function readEnvelope(storage) {
   } catch {
     fail('CORRUPT_STORAGE', 'Stored mock data is not valid JSON. Reset the mock database to recover.')
   }
-  if (envelope?.version !== MOCK_DATABASE_VERSION || !envelope.database) {
+  if (!envelope?.database) {
+    fail('CORRUPT_STORAGE', 'Stored mock data has an unsupported version. Reset the mock database to recover.')
+  }
+  if (envelope.version === 1) {
+    const migratedDatabase = clone(envelope.database)
+    migratedDatabase.notifications ||= []
+    assertDatabaseIntegrity(migratedDatabase)
+    writeEnvelope(storage, migratedDatabase)
+    return migratedDatabase
+  }
+  if (envelope.version !== MOCK_DATABASE_VERSION) {
     fail('CORRUPT_STORAGE', 'Stored mock data has an unsupported version. Reset the mock database to recover.')
   }
   assertDatabaseIntegrity(envelope.database)

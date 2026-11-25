@@ -2,6 +2,10 @@ import { USER_ROLES } from '../../constants/roles.js'
 import { ISSUE_STATUS } from '../../mocks/seedData.js'
 import { getCollection, getRecord, transact, MockDataError } from '../../mocks/mockDatabase.js'
 import {
+  announceNotificationsChanged,
+  createModerationDeletionNotifications,
+} from '../notifications/notifications.service.js'
+import {
   assertText,
   assertOnlyFields,
   requireActor,
@@ -89,10 +93,19 @@ export async function updateStatus(id, status, directorId) {
 }
 
 export async function deleteIssue(id, directorId) {
-  return transact((database) => {
-    requireDirector(database, directorId)
+  const deletedIssue = await transact((database, createId) => {
+    const director = requireDirector(database, directorId)
     const issue = requireRecord(database, 'issues', id)
+    createModerationDeletionNotifications(database, createId, {
+      itemType: 'CLASS_ISSUE',
+      itemId: issue.id,
+      itemTitle: issue.title,
+      directorName: director.name,
+      deletedAt: new Date().toISOString(),
+    })
     database.issues = database.issues.filter((item) => item.id !== id)
     return issue
   })
+  announceNotificationsChanged()
+  return deletedIssue
 }
