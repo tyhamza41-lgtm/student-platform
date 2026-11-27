@@ -18,7 +18,11 @@ export const EVENT_STATUS = Object.freeze({
 })
 
 export const NOTIFICATION_TYPES = Object.freeze({
+  POST_CREATED: 'POST_CREATED',
+  EVENT_CREATED: 'EVENT_CREATED',
+  CLASS_ISSUE_CREATED: 'CLASS_ISSUE_CREATED',
   EVENT_DELETED: 'EVENT_DELETED',
+  EVENT_UPDATED: 'EVENT_UPDATED',
   ISSUE_DELETED: 'ISSUE_DELETED',
 })
 
@@ -229,8 +233,8 @@ const data = {
       date: '2026-11-27T14:00:00',
       location: 'Amphithéâtre A',
       description: 'Échanges autour des usages responsables de l’intelligence artificielle dans les métiers du numérique.',
-      participantCount: 48,
-      participantAvatarIds: ['student-2', 'representative-1'],
+      participantCount: 1,
+      participantAvatarIds: ['student-2'],
       status: 'PUBLISHED',
     },
     {
@@ -242,8 +246,8 @@ const data = {
       date: '2026-12-03T09:00:00',
       location: 'FabLab ENSA',
       description: 'Une journée pour imaginer des solutions numériques au service de la transition écologique du campus.',
-      participantCount: 32,
-      participantAvatarIds: ['representative-1', 'student-2', 'student-1'],
+      participantCount: 1,
+      participantAvatarIds: ['student-1'],
       status: 'PUBLISHED',
     },
   ],

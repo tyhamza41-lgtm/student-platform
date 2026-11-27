@@ -1,8 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { resetMockDatabase } from '../../mocks/mockDatabase'
+import * as profilesService from '../../features/profiles/profiles.service'
 import UserSearch from './UserSearch'
+
+beforeEach(async () => {
+  localStorage.clear()
+  await resetMockDatabase()
+})
 
 function CurrentPath() {
   const location = useLocation()
@@ -31,6 +38,18 @@ describe('UserSearch', () => {
     await user.type(screen.getByRole('combobox', { name: 'Search people' }), name)
 
     expect(await screen.findByRole('option', { name: new RegExp(`${name}.*${role}`) })).toBeInTheDocument()
+  })
+
+  it('uses the latest persisted profile picture in search results', async () => {
+    const avatarUrl = 'data:image/jpeg;base64,latest-search-photo'
+    await profilesService.update('student-2', { avatarUrl }, 'student-2')
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('combobox', { name: 'Search people' }), 'Hamza')
+    const result = await screen.findByRole('option', { name: /Hamza Tya.*Student/ })
+
+    expect(result.querySelector('img')).toHaveAttribute('src', avatarUrl)
   })
 
   it('shows no irrelevant results for an empty query and a clear no-match state', async () => {

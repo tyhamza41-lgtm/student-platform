@@ -10,7 +10,13 @@ import { USER_ROLES, REPRESENTATIVE_STATUS } from './roles'
  * @returns {boolean}
  */
 export function isRepresentative(user) {
-  if (!user || user.role !== USER_ROLES.STUDENT) {
+  if (
+    !user ||
+    user.role !== USER_ROLES.STUDENT ||
+    user.isActive === false ||
+    typeof user.classId !== 'string' ||
+    !user.classId.trim()
+  ) {
     return false
   }
 
@@ -138,6 +144,13 @@ export const NAVIGATION_CONFIG = {
       mobilePrimary: true,
     },
     {
+      label: 'Class Issues',
+      path: ROUTES.ISSUES,
+      icon: 'message-square-warning',
+      mobilePrimary: false,
+      end: true,
+    },
+    {
       label: 'My Posts',
       path: ROUTES.ASSOCIATION.MY_POSTS,
       icon: 'file-text',
@@ -148,6 +161,12 @@ export const NAVIGATION_CONFIG = {
       path: ROUTES.ASSOCIATION.MY_EVENTS,
       icon: 'calendar-check',
       mobilePrimary: true,
+    },
+    {
+      label: 'My Activity',
+      path: ROUTES.STUDENT.MY_ACTIVITY,
+      icon: 'activity',
+      mobilePrimary: false,
     },
     {
       label: 'Profile',
@@ -162,13 +181,19 @@ export const NAVIGATION_CONFIG = {
       label: 'Dashboard',
       path: ROUTES.DIRECTOR.DASHBOARD,
       icon: 'layout-dashboard',
-      mobilePrimary: true,
+      mobilePrimary: false,
     },
     {
       label: 'Feed / Posts',
       path: ROUTES.FEED,
       icon: 'house',
       mobilePrimary: true,
+    },
+    {
+      label: 'Create Post',
+      path: ROUTES.DIRECTOR.CREATE_POST,
+      icon: 'file-text',
+      mobilePrimary: false,
     },
     {
       label: 'Events',
@@ -184,13 +209,13 @@ export const NAVIGATION_CONFIG = {
       end: true,
     },
     {
-      label: 'Moderation',
-      path: ROUTES.DIRECTOR.MODERATION,
-      icon: 'shield-check',
-      mobilePrimary: false,
+      label: 'My Activity',
+      path: ROUTES.STUDENT.MY_ACTIVITY,
+      icon: 'activity',
+      mobilePrimary: true,
     },
     {
-      label: 'Students Management',
+      label: 'User Deletion',
       path: ROUTES.DIRECTOR.STUDENTS,
       icon: 'users',
       mobilePrimary: false,
@@ -245,7 +270,7 @@ export function getNavigationItems(user) {
 }
 
 /**
- * Returns the primary navigation items for mobile bottom bar (up to 4 items).
+ * Returns the primary navigation items for mobile bottom bar.
  *
  * @param {Object|null} user
  * @returns {Array<Object>}
@@ -253,7 +278,8 @@ export function getNavigationItems(user) {
 export function getMobileNavigationItems(user) {
   const items = getNavigationItems(user)
   const primaries = items.filter((item) => item.mobilePrimary)
-  return primaries.length > 0 ? primaries.slice(0, 4) : items.slice(0, 4)
+  const maxItems = 4
+  return primaries.length > 0 ? primaries.slice(0, maxItems) : items.slice(0, maxItems)
 }
 
 // Alias for backwards compatibility

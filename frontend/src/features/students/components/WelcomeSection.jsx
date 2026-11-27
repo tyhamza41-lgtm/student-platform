@@ -1,6 +1,6 @@
 import { Card } from '../../../components/ui'
 
-function WelcomeSection({ student }) {
+function WelcomeSection({ student, isAssociation = false }) {
   const formattedDate = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -24,7 +24,9 @@ function WelcomeSection({ student }) {
             Welcome back, {student.name}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-white/85">
-            Here is what is happening in your class and across campus today.
+            {isAssociation
+              ? 'Here is what is happening across campus and within your Association today.'
+              : 'Here is what is happening in your class and across campus today.'}
           </p>
         </div>
       </div>

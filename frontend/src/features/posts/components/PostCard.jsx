@@ -7,7 +7,7 @@ import { ROUTES } from '../../../constants/routes'
 import { formatRelativeTime } from '../../../utils/formatRelativeTime'
 import * as commentsService from '../../comments/comments.service'
 import * as postsService from '../posts.service'
-import { canManagePost } from '../postPermissions'
+import { canDeletePost, canEditPost } from '../postPermissions'
 import * as reactionsService from '../../reactions/reactions.service'
 import * as usersService from '../../users/users.service'
 
@@ -23,7 +23,7 @@ function getClassGroupLabel(post) {
   return `Class/Group: ${name}${identifier}`
 }
 
-function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) {
+function PostCard({ post, onDeleted, showCommentsPreview = true }) {
   const { currentUser } = useAuth()
   const navigate = useNavigate()
   const [currentPost, setCurrentPost] = useState(post)
@@ -87,8 +87,8 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
     return () => { active = false }
   }, [peopleType, post.id])
 
-  const isDirector = currentUser?.role === 'DIRECTOR'
-  const canManage = canManagePost(currentPost, currentUser)
+  const canEdit = canEditPost(currentPost, currentUser)
+  const canDelete = canDeletePost(currentPost, currentUser)
 
   async function refreshPost() {
     const [freshPost, postReactions, freshComments] = await Promise.all([
@@ -129,22 +129,6 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
     }
   }
 
-  async function handleModeration() {
-    const status = currentPost.status === 'PUBLISHED' ? 'HIDDEN' : 'PUBLISHED'
-    setIsBusy(true)
-    setError('')
-    try {
-      const updatedPost = await postsService.setModerationStatus(post.id, status, currentUser.id)
-      const updatedPostWithClass = { ...updatedPost, className: currentPost.className }
-      setCurrentPost(updatedPostWithClass)
-      onModerated?.(updatedPostWithClass)
-    } catch (actionError) {
-      setError(actionError.message || 'Could not update post visibility.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   const likes = currentPost.likeCount || 0
   const dislikes = currentPost.dislikeCount || 0
 
@@ -173,29 +157,23 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
             </p>
           )}
         </div>
-        {canManage && (
+        {(canEdit || canDelete) && (
           <div className="flex shrink-0 items-center gap-1">
-            <Link
-              to={ROUTES.POSTS.EDIT(currentPost.id)}
-              className="rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-            >
-              Edit
-            </Link>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-            >
-              Delete
-            </button>
-            {isDirector && (
+            {canEdit && (
+              <Link
+                to={ROUTES.POSTS.EDIT(currentPost.id)}
+                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+              >
+                Edit
+              </Link>
+            )}
+            {canDelete && (
               <button
                 type="button"
-                onClick={handleModeration}
-                disabled={isBusy}
-                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50"
+                onClick={() => setConfirmDelete(true)}
+                className="rounded-lg px-2.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
               >
-                {currentPost.status === 'PUBLISHED' ? 'Hide' : 'Restore'}
+                Delete
               </button>
             )}
           </div>
@@ -284,7 +262,12 @@ function PostCard({ post, onDeleted, onModerated, showCommentsPreview = true }) 
         <div id={`comments-${currentPost.id}`} className="mt-4 space-y-3 rounded-lg bg-slate-50 p-4" aria-label={`Comments on ${currentPost.authorName}'s post`}>
           {postComments.length ? postComments.slice(0, 2).map((comment) => (
             <div key={comment.id} className="flex items-start gap-2.5 text-sm">
-              <Avatar src={comment.authorAvatar} name={comment.authorName} alt={`${comment.authorName} profile`} size="xs" />
+              <Link
+                to={ROUTES.USER_PROFILE(comment.authorId)}
+                aria-label={`View ${comment.authorName}'s profile`}
+              >
+                <Avatar src={comment.authorAvatar} name={comment.authorName} alt={`${comment.authorName} profile`} size="xs" />
+              </Link>
               <p className="min-w-0">
                 <Link to={ROUTES.USER_PROFILE(comment.authorId)} className="font-semibold text-slate-800 hover:text-violet-700">{comment.authorName}</Link>
                 <span className="ml-2 text-slate-600">{comment.content}</span>

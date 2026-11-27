@@ -12,6 +12,7 @@ import { UIProvider } from '../context/UIContext'
 const activeRouters = new Set()
 
 beforeEach(() => {
+  localStorage.clear()
   vi.stubGlobal('matchMedia', (media) => ({
     matches: false,
     media,
@@ -65,6 +66,15 @@ describe('application router', () => {
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
   })
 
+  it('keeps public registration as a placeholder without role selection', async () => {
+    await renderRoute('/register')
+
+    expect(await screen.findByRole('heading', { name: 'Create account' })).toBeInTheDocument()
+    expect(screen.getByText('Registration page — coming soon.')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Association|Director/i })).not.toBeInTheDocument()
+  })
+
   it('redirects unauthenticated direct access to a protected route to login', async () => {
     const memoryRouter = await renderRoute('/feed')
 
@@ -72,10 +82,34 @@ describe('application router', () => {
     expect(memoryRouter.state.location.pathname).toBe('/login')
   })
 
-  it('renders a student route for an authenticated student', async () => {
-    await renderRoute('/my-activity', users.student)
-
+  it.each([
+    ['student', users.student],
+    ['representative', users.representative],
+    ['association', users.association],
+    ['Director', users.director],
+  ])('renders My Activity for an authenticated %s', async (_role, user) => {
+    await renderRoute('/my-activity', user)
     expect(await screen.findByRole('heading', { name: 'My Activity' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Filter activity' })).toBeInTheDocument()
+    const mobileNavigation = within(screen.getByRole('navigation', { name: 'Mobile navigation' }))
+    if (user.role === 'ASSOCIATION') {
+      expect(mobileNavigation.queryByRole('link', { name: 'My Activity' })).not.toBeInTheDocument()
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Open user menu' }))
+      expect(screen.getByRole('menuitem', { name: 'My Activity' })).toBeInTheDocument()
+    } else {
+      expect(mobileNavigation.getByRole('link', { name: 'My Activity' })).toBeInTheDocument()
+    }
+  })
+
+  it.each([
+    ['inactive representative', { ...users.representative, isActive: false }],
+    ['unassigned representative', { ...users.representative, classId: undefined }],
+  ])('blocks direct issue creation access for an %s', async (_case, user) => {
+    const memoryRouter = await renderRoute('/issues/create', user)
+
+    expect(await screen.findByRole('heading', { name: /Welcome back/i })).toBeInTheDocument()
+    expect(memoryRouter.state.location.pathname).toBe('/feed')
+    expect(screen.queryByRole('heading', { name: 'Create Class Issue' })).not.toBeInTheDocument()
   })
 
   it('renders the student dashboard at the existing feed route', async () => {
@@ -184,9 +218,13 @@ describe('application router', () => {
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent.trim())).toEqual([
       'Create Event',
       'My Profile',
+      'Class Issues',
+      'My Activity',
       'Settings',
       'Sign out',
     ])
+    expect(within(menu).getByRole('menuitem', { name: 'Class Issues' }).parentElement).toHaveClass('lg:hidden')
+    expect(within(menu).getByRole('menuitem', { name: 'My Activity' }).parentElement).toHaveClass('lg:hidden')
   })
 
   it.each([
@@ -235,6 +273,7 @@ describe('application router', () => {
     menu = screen.getByRole('menu')
     await user.click(within(menu).getByRole('menuitem', { name: 'My Profile' }))
     expect(memoryRouter.state.location.pathname).toBe('/profile')
+    expect(await screen.findByRole('heading', { name: 'My Profile' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Open user menu' }))
     menu = screen.getByRole('menu')
@@ -246,8 +285,12 @@ describe('application router', () => {
   it.each([
     ['student', users.student, '/association/posts/create', '/feed'],
     ['student', users.student, '/association/events/create', '/feed'],
+    ['student', users.student, '/association/events', '/feed'],
     ['student', users.student, '/issues/create', '/feed'],
+    ['association', users.association, '/issues/create', '/feed'],
+    ['representative', users.representative, '/association/events', '/feed'],
     ['director', users.director, '/issues/create', '/director/dashboard'],
+    ['director', users.director, '/association/events', '/director/dashboard'],
     ['student', users.student, '/director/issues', '/feed'],
     ['student', users.student, '/director/posts/create', '/feed'],
     ['director', users.director, '/association/events/create', '/director/dashboard'],
@@ -279,10 +322,112 @@ describe('application router', () => {
     expect(await screen.findByRole('heading', { name: 'Manage Events' })).toBeInTheDocument()
   })
 
+  it('shows My Events in the Association mobile navigation and opens its existing route', async () => {
+    const memoryRouter = await renderRoute('/feed', users.association)
+    const mobileNavigation = within(screen.getByRole('navigation', { name: 'Mobile navigation' }))
+
+    expect(mobileNavigation.getAllByRole('link')).toHaveLength(4)
+    await userEvent.setup().click(mobileNavigation.getByRole('link', { name: 'My Events' }))
+
+    expect(memoryRouter.state.location.pathname).toBe('/association/events')
+    expect(await screen.findByRole('heading', { name: 'Manage Events' })).toBeInTheDocument()
+  })
+
+  it('places Association Class Issues and My Activity in the mobile dropdown, preserving desktop navigation', async () => {
+    const memoryRouter = await renderRoute('/feed', users.association)
+    const desktopNavigation = within(screen.getByRole('navigation', { name: 'Application navigation' }))
+    const mobileNavigation = within(screen.getByRole('navigation', { name: 'Mobile navigation' }))
+    const user = userEvent.setup()
+    const trigger = screen.getByRole('button', { name: 'Open user menu' })
+
+    expect(desktopNavigation.getByRole('link', { name: 'Class Issues' })).toHaveAttribute('href', '/issues')
+    expect(desktopNavigation.getByRole('link', { name: 'My Activity' }))
+      .toHaveAttribute('href', '/my-activity')
+    expect(mobileNavigation.getAllByRole('link')).toHaveLength(4)
+    expect(mobileNavigation.queryByRole('link', { name: 'Class Issues' })).not.toBeInTheDocument()
+    expect(mobileNavigation.queryByRole('link', { name: 'My Activity' })).not.toBeInTheDocument()
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    let menu = screen.getByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Class Issues' }))
+
+    expect(memoryRouter.state.location.pathname).toBe('/issues')
+    expect(await screen.findByRole('heading', { name: 'Class Issues' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    menu = screen.getByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: 'My Activity' }))
+    expect(memoryRouter.state.location.pathname).toBe('/my-activity')
+    expect(await screen.findByRole('heading', { name: /My Activity/i })).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['student', users.student],
+    ['representative', users.representative],
+    ['director', users.director],
+  ])('does not expose Association My Events in the %s mobile navigation', async (_role, user) => {
+    await renderRoute('/feed', user)
+
+    expect(within(screen.getByRole('navigation', { name: 'Mobile navigation' }))
+      .queryByRole('link', { name: 'My Events' })).not.toBeInTheDocument()
+  })
+
   it('renders a director route for a director user', async () => {
     await renderRoute('/director/representatives', users.director)
 
     expect(await screen.findByRole('heading', { name: 'Representatives' })).toBeInTheDocument()
+  })
+
+  it('renders Director management pages and links them from the mobile account menu without moderation', async () => {
+    const memoryRouter = await renderRoute('/director/dashboard', users.director)
+    const desktopNavigation = within(screen.getByRole('navigation', { name: 'Application navigation' }))
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(desktopNavigation.getByRole('link', { name: 'Create Post' })).toHaveAttribute('href', '/director/posts/create')
+    expect(desktopNavigation.getByRole('link', { name: 'User Deletion' })).toHaveAttribute('href', '/director/students')
+    expect(desktopNavigation.getByRole('link', { name: 'Associations Management' })).toHaveAttribute('href', '/director/associations')
+    expect(desktopNavigation.getByRole('link', { name: 'Representatives Management' })).toHaveAttribute('href', '/director/representatives')
+    expect(desktopNavigation.queryByRole('link', { name: 'Moderation' })).not.toBeInTheDocument()
+
+    await userEvent.setup().click(desktopNavigation.getByRole('link', { name: 'Create Post' }))
+    expect(memoryRouter.state.location.pathname).toBe('/director/posts/create')
+    expect(await screen.findByRole('heading', { name: 'Create Post' })).toBeInTheDocument()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open user menu' }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).queryByRole('menuitem', { name: 'Moderation' })).not.toBeInTheDocument()
+    await userEvent.setup().click(within(menu).getByRole('menuitem', { name: 'User Deletion' }))
+
+    expect(memoryRouter.state.location.pathname).toBe('/director/students')
+    expect(await screen.findByRole('heading', { name: 'User Deletion' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('renders 404 for the removed director moderation route', async () => {
+    await renderRoute('/director/moderation', users.director)
+
+    expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['student', users.student],
+    ['association', users.association],
+  ])('does not expose Director management links to a %s account', async (_role, user) => {
+    await renderRoute('/feed', user)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open user menu' }))
+
+    expect(screen.queryByRole('menuitem', { name: 'User Deletion' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Associations Management' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Representatives Management' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Moderation' })).not.toBeInTheDocument()
   })
 
   it('redirects a director accessing a public auth route to the director dashboard', async () => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import NavigationIcon from '../../../components/navigation/NavigationIcon'
 import { Button, Card } from '../../../components/ui'
+import { USER_ROLES } from '../../../constants/roles'
 import { users } from '../../../mocks/data/users'
 import * as postsService from '../../posts/posts.service'
 import * as eventsService from '../../events/events.service'
@@ -39,8 +40,35 @@ function ClassInformation({ student, stacked = false }) {
   )
 }
 
+function AssociationStats({ posts, events, associationId }) {
+  const statistics = [
+    {
+      label: 'Published posts',
+      value: posts.filter((post) => post.associationId === associationId).length,
+    },
+    {
+      label: 'Published events',
+      value: events.filter((event) => (
+        event.ownerType === USER_ROLES.ASSOCIATION && event.ownerId === associationId
+      )).length,
+    },
+  ]
+
+  return (
+    <section aria-label="Association overview statistics" className="grid gap-3 sm:grid-cols-2">
+      {statistics.map((statistic) => (
+        <Card key={statistic.label} padding="sm" className="rounded-2xl border-slate-200/75">
+          <p className="text-xs font-semibold text-slate-500">{statistic.label}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{statistic.value}</p>
+        </Card>
+      ))}
+    </section>
+  )
+}
+
 function StudentDashboard({ postsData }) {
   const { currentUser } = useAuth()
+  const isAssociation = currentUser?.role === USER_ROLES.ASSOCIATION
   const [loadedPosts, setLoadedPosts] = useState(postsData ?? [])
   const [postsLoading, setPostsLoading] = useState(postsData === undefined)
   const [postsError, setPostsError] = useState('')
@@ -55,8 +83,7 @@ function StudentDashboard({ postsData }) {
     if (postsData !== undefined) return undefined
 
     let active = true
-    const filters = currentUser?.role === 'DIRECTOR' ? {} : { status: 'PUBLISHED' }
-    postsService.getAll(filters)
+    postsService.getAll({ status: 'PUBLISHED' })
       .then((records) => {
         if (active) {
           setLoadedPosts(records.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)))
@@ -69,7 +96,7 @@ function StudentDashboard({ postsData }) {
         if (active) setPostsLoading(false)
       })
     return () => { active = false }
-  }, [postsData, currentUser?.role, postsReload])
+  }, [postsData, postsReload])
 
   useEffect(() => {
     let active = true
@@ -95,12 +122,14 @@ function StudentDashboard({ postsData }) {
     return () => { active = false }
   }, [currentUser?.id, currentUser?.isActive, currentUser?.role, eventsReload])
 
-  const student = {
-    ...developmentStudent,
-    ...currentUser,
-    name: currentUser?.name || developmentStudent?.name || 'Student',
-    avatarUrl: currentUser?.avatarUrl || developmentStudent?.avatarUrl,
-  }
+  const student = isAssociation
+    ? { name: currentUser?.name || 'Association' }
+    : {
+        ...developmentStudent,
+        ...currentUser,
+        name: currentUser?.name || developmentStudent?.name || 'Student',
+        avatarUrl: currentUser?.avatarUrl || developmentStudent?.avatarUrl,
+      }
 
   const hasPosts = loadedPosts.length > 0
   const hasEvents = loadedEvents.length > 0
@@ -108,12 +137,6 @@ function StudentDashboard({ postsData }) {
 
   function removePost(postId) {
     setLoadedPosts((current) => current.filter((post) => post.id !== postId))
-  }
-
-  function updatePost(updatedPost) {
-    setLoadedPosts((current) => current.map((post) => (
-      post.id === updatedPost.id ? updatedPost : post
-    )))
   }
 
   function renderPosts() {
@@ -133,7 +156,7 @@ function StudentDashboard({ postsData }) {
       )
     }
     if (hasPosts) {
-      return <RecentPosts posts={loadedPosts} onPostDeleted={removePost} onPostModerated={updatePost} />
+      return <RecentPosts posts={loadedPosts} onPostDeleted={removePost} />
     }
     return null
   }
@@ -177,11 +200,19 @@ function StudentDashboard({ postsData }) {
   return (
     <div className="-mt-4 min-w-0 space-y-6 sm:-mt-5">
       <div className="space-y-4 sm:space-y-5">
-        <WelcomeSection student={student} />
-        <StudentStats
-          events={loadedEvents}
-          registeredEventIds={registeredEventIds}
-        />
+        <WelcomeSection student={student} isAssociation={isAssociation} />
+        {isAssociation ? (
+          <AssociationStats
+            posts={loadedPosts}
+            events={loadedEvents}
+            associationId={currentUser.associationId || currentUser.id}
+          />
+        ) : (
+          <StudentStats
+            events={loadedEvents}
+            registeredEventIds={registeredEventIds}
+          />
+        )}
       </div>
 
       {hasPosts && showEventsPanel ? (
@@ -190,9 +221,12 @@ function StudentDashboard({ postsData }) {
           className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(292px,1fr)]"
         >
           {renderPosts()}
-          <aside className="min-w-0 space-y-5" aria-label="Student dashboard information">
+          <aside
+            className="min-w-0 space-y-5"
+            aria-label={isAssociation ? 'Association dashboard information' : 'Student dashboard information'}
+          >
             {renderEventsPanel()}
-            <ClassInformation student={student} stacked />
+            {!isAssociation && <ClassInformation student={student} stacked />}
           </aside>
         </div>
       ) : (
@@ -204,7 +238,7 @@ function StudentDashboard({ postsData }) {
           {!hasPosts && showEventsPanel && !postsLoading && !postsError && (
             <DashboardEmptyState
               title="No campus posts yet"
-              description="Class announcements and campus updates will appear here when they are shared."
+              description="Campus announcements and updates will appear here when they are shared."
               icon="file-text"
             />
           )}
@@ -223,7 +257,7 @@ function StudentDashboard({ postsData }) {
               />
             </div>
           )}
-          <ClassInformation student={student} />
+          {!isAssociation && <ClassInformation student={student} />}
         </div>
       )}
     </div>

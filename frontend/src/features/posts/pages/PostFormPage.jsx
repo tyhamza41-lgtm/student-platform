@@ -6,7 +6,7 @@ import { USER_ROLES } from '../../../constants/roles'
 import { useAuth } from '../../../context/AuthContext'
 import { isRepresentative } from '../../../constants/navigation'
 import * as postsService from '../posts.service'
-import { canCreatePost, canManagePost } from '../postPermissions'
+import { canCreatePost, canEditPost } from '../postPermissions'
 
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024
 
@@ -41,7 +41,7 @@ function PostFormPage() {
         if (!active) return
         if (!post) {
           setError('This post could not be found.')
-        } else if (!canManagePost(post, currentUser)) {
+        } else if (!canEditPost(post, currentUser)) {
           setError('You do not have permission to edit this post.')
         } else {
           setContent(post.content)
@@ -92,7 +92,7 @@ function PostFormPage() {
       setError('Post content must be 5,000 characters or fewer.')
       return
     }
-    if (!currentUser || (isEditing ? !canManagePost({ authorId: currentUser.id }, currentUser) : !canCreatePost(currentUser))) {
+    if (!currentUser || (isEditing ? !canEditPost({ authorId: currentUser.id }, currentUser) : !canCreatePost(currentUser))) {
       setError('You do not have permission to publish posts.')
       return
     }

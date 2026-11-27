@@ -7,12 +7,17 @@ export function canCreatePost(user) {
     (user?.role === USER_ROLES.STUDENT && isRepresentative(user))
 }
 
-export function canManagePost(post, user) {
+export function canEditPost(post, user) {
   if (!post || !user || user.isActive === false) return false
-  if (user.role === USER_ROLES.DIRECTOR) return true
   if (post.authorId !== user.id) return false
-  if (user.role === USER_ROLES.ASSOCIATION) return true
+  if (user.role === USER_ROLES.DIRECTOR || user.role === USER_ROLES.ASSOCIATION) return true
   return user.role === USER_ROLES.STUDENT &&
     isRepresentative(user) &&
     (!user.classId || !post.classId || user.classId === post.classId)
+}
+
+export function canDeletePost(post, user) {
+  if (!post || !user || user.isActive === false) return false
+  if (user.role === USER_ROLES.DIRECTOR) return true
+  return canEditPost(post, user)
 }

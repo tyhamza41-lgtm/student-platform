@@ -1,11 +1,15 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { AuthProvider } from '../context/AuthContext'
 import { AuthSession } from '../../tests/auth-test-utils'
 import { users } from '../../tests/auth-fixtures'
 import MainLayout from './MainLayout'
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 async function renderLayout() {
   render(

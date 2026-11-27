@@ -3,6 +3,7 @@ import { ISSUE_STATUS } from '../../mocks/seedData.js'
 import { getCollection, getRecord, transact, MockDataError } from '../../mocks/mockDatabase.js'
 import {
   announceNotificationsChanged,
+  createCreationNotifications,
   createModerationDeletionNotifications,
 } from '../notifications/notifications.service.js'
 import {
@@ -58,7 +59,7 @@ export async function create(data, representativeId) {
   assertOnlyFields(data, ['classId', 'title', 'description'], 'Issue creation')
   assertText(data?.title, 'Issue title', { maxLength: 180 })
   assertText(data?.description, 'Issue description')
-  return transact((database, createId) => {
+  const createdIssue = await transact((database, createId) => {
     const { representative } = requireActiveRepresentative(
       database,
       representativeId,
@@ -74,8 +75,22 @@ export async function create(data, representativeId) {
       status: ISSUE_STATUS.PENDING,
     }
     database.issues.push(issue)
+    const studentClass = requireRecord(database, 'classes', issue.classId)
+    createCreationNotifications(database, createId, {
+      itemType: 'CLASS_ISSUE',
+      item: issue,
+      actor: representative,
+      itemTitle: issue.title,
+      itemSummary: issue.description,
+      context: {
+        classId: studentClass.id,
+        className: studentClass.name,
+      },
+    })
     return issue
   })
+  announceNotificationsChanged()
+  return createdIssue
 }
 
 export async function update(id, data, actorId) {
@@ -109,6 +124,7 @@ export async function updateStatus(id, status, directorId) {
   return transact((database) => {
     requireDirector(database, directorId)
     const issue = requireRecord(database, 'issues', id)
+    if (issue.status === status) return issue
     const transitionedAt = new Date().toISOString()
     const hasValidFirstViewMetadata = (
       typeof issue.viewedAt === 'string' &&

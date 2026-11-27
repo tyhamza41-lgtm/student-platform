@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { AuthProvider } from '../../context/AuthContext'
@@ -11,6 +11,7 @@ import {
   transact,
 } from '../../mocks/mockDatabase'
 import * as commentsService from '../comments/comments.service'
+import * as profilesService from '../profiles/profiles.service'
 import * as issuesService from './issues.service'
 import IssueDetailsPage from './pages/IssueDetailsPage'
 import IssueFormPage from './pages/IssueFormPage'
@@ -90,6 +91,43 @@ async function addOtherClassIssue() {
 }
 
 describe('Class Issues experience', () => {
+  it('opens a Class Issue commenter profile without changing the signed-in user', async () => {
+    const user = userEvent.setup()
+    await commentsService.add({
+      issueId: 'issue-1',
+      content: 'I noticed the same problem yesterday.',
+    }, authUsers.student.id)
+    const view = await renderIssuesRoute('/issues/issue-1')
+
+    await user.click(await screen.findByRole('link', { name: 'Sam Student' }))
+
+    expect(await screen.findByRole('heading', { name: 'Sam Student' })).toBeInTheDocument()
+    expect(view.router.state.location.pathname).toBe('/users/student-1')
+  })
+
+  it('uses current profile photos for issue submitters and commenters', async () => {
+    const avatarUrl = 'data:image/jpeg;base64,current-issue-author-photo'
+    await commentsService.add({
+      issueId: 'issue-1',
+      content: 'Representative issue comment.',
+    }, 'representative-1')
+    await profilesService.update('representative-1', { avatarUrl }, 'representative-1')
+
+    const listView = await renderIssuesRoute('/issues')
+    const issueCard = (await screen.findByRole('heading', {
+      name: 'Climatiseur en panne dans la salle B12',
+    })).closest('article')
+    expect(within(issueCard).getByRole('img', { name: 'Omar Benali profile' }))
+      .toHaveAttribute('src', avatarUrl)
+    listView.unmount()
+    listView.router.dispose()
+
+    await renderIssuesRoute('/issues/issue-1')
+    const representativeAvatars = await screen.findAllByRole('img', { name: 'Omar Benali profile' })
+    expect(representativeAvatars).toHaveLength(2)
+    expect(representativeAvatars.every((avatar) => avatar.getAttribute('src') === avatarUrl)).toBe(true)
+  })
+
   it('lists issues globally with their class/group identity and shows creation only to representatives', async () => {
     await addOtherClassIssue()
     const studentView = await renderIssuesRoute('/issues')
@@ -140,6 +178,77 @@ describe('Class Issues experience', () => {
     await resetMockDatabase()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('heading', { name: 'Climatiseur en panne dans la salle B12' })).toBeInTheDocument()
+  })
+
+  it('lets an Association view global issues without issue-management permissions', async () => {
+    await addOtherClassIssue()
+    const user = userEvent.setup()
+    const view = await renderIssuesRoute('/issues', authUsers.association)
+    expect(await screen.findByRole('heading', { name: 'Library lab availability' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Climatiseur en panne dans la salle B12' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Create class issue' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'View issue: Library lab availability' }))
+    expect(await screen.findByRole('heading', { name: 'Library lab availability' })).toBeInTheDocument()
+    expect(screen.getByText('Class/Group: GINF-3 — Génie Informatique (class-ginf-3)')).toBeInTheDocument()
+    const commentInput = screen.getByRole('textbox', { name: 'Add a comment' })
+    await user.type(commentInput, 'Association response to this issue.')
+    await user.click(screen.getByRole('button', { name: 'Post comment' }))
+
+    const commentText = await screen.findByText('Association response to this issue.')
+    const commentItem = commentText.closest('li')
+    expect(within(commentItem).getByRole('link', { name: 'Bureau des Arts' }))
+      .toHaveAttribute('href', `/users/${authUsers.association.id}`)
+    expect(within(commentItem).getByRole('img', { name: 'Bureau des Arts profile' }))
+      .toHaveAttribute('src', expect.stringContaining('photo-1529156069898-49953e39b3ac'))
+    expect(within(commentItem).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+
+    const savedComment = (await commentsService.getAll({ issueId: 'issue-other-class' }))
+      .find((comment) => comment.content === 'Association response to this issue.')
+    expect(savedComment).toMatchObject({
+      issueId: 'issue-other-class',
+      authorId: authUsers.association.id,
+      authorName: 'Bureau des Arts',
+      authorAvatar: expect.stringContaining('photo-1529156069898-49953e39b3ac'),
+    })
+    view.unmount()
+    view.router.dispose()
+
+    const refreshedView = await renderIssuesRoute('/issues/issue-other-class', authUsers.association)
+    expect(await screen.findByText('Association response to this issue.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Bureau des Arts' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create class issue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit issue|assign issue/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete issue' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Issue status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark as In progress' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark as Resolved' })).not.toBeInTheDocument()
+
+    expect(await issuesService.getById('issue-other-class')).toMatchObject({
+      title: 'Library lab availability',
+      classId: 'class-ginf-3',
+    })
+    await expect(issuesService.create({
+      classId: 'class-ginf-2',
+      title: 'Unauthorized Association issue',
+      description: 'Associations cannot create Class Issues.',
+    }, authUsers.association.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(issuesService.update('issue-other-class', { title: 'Unauthorized' }, authUsers.association.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(issuesService.update(
+      'issue-other-class',
+      { assignedToId: 'director-1' },
+      authUsers.association.id,
+    )).rejects.toMatchObject({ code: 'VALIDATION_ERROR' })
+    await expect(issuesService.updateStatus('issue-other-class', 'IN_PROGRESS', authUsers.association.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(issuesService.deleteIssue('issue-other-class', authUsers.association.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(commentsService.deleteComment(savedComment.id, 'association-2'))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    expect(await commentsService.deleteComment(savedComment.id, authUsers.association.id))
+      .toMatchObject({ id: savedComment.id })
+    refreshedView.unmount()
+    refreshedView.router.dispose()
   })
 
   it('lets a student list, open, and comment on an issue from another class', async () => {
@@ -212,6 +321,8 @@ describe('Class Issues experience', () => {
       .toHaveAttribute('src', expect.stringContaining('photo-1494790108377'))
     expect(screen.queryByRole('button', { name: 'Delete issue' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Issue status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark as In progress' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark as Resolved' })).not.toBeInTheDocument()
 
     await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), 'The class has reported it too.')
     await user.click(screen.getByRole('button', { name: 'Post comment' }))
@@ -227,7 +338,7 @@ describe('Class Issues experience', () => {
     expect(screen.queryByText('The class has reported it too.')).not.toBeInTheDocument()
   })
 
-  it('gives the Director status controls and confirmed deletion with comment and notification cleanup', async () => {
+  it('gives the Director status buttons without a status select and confirmed deletion with comment and notification cleanup', async () => {
     const user = userEvent.setup()
     const directorComment = await commentsService.add({
       issueId: 'issue-1',
@@ -239,52 +350,34 @@ describe('Class Issues experience', () => {
     }, 'student-4')
     const { router } = await renderIssuesRoute('/director/issues/issue-1', director)
 
-    const statusSelect = await screen.findByLabelText('Issue status')
-    expect(within(statusSelect).getAllByRole('option').map((option) => option.value)).toEqual([
-      'PENDING',
-      'VIEWED',
-      'IN_PROGRESS',
-      'RESOLVED',
-    ])
+    const inProgressButton = await screen.findByRole('button', { name: 'Mark as In progress' })
+    const resolvedButton = screen.getByRole('button', { name: 'Mark as Resolved' })
+    expect(screen.queryByLabelText('Issue status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /viewed/i })).not.toBeInTheDocument()
+    expect(inProgressButton).toBeDisabled()
+    expect(resolvedButton).toBeEnabled()
+
     const directorCommentRow = screen.getByText('Director review comment.').closest('li')
     await user.click(within(directorCommentRow).getByRole('button', { name: 'Delete' }))
     const commentConfirmation = await screen.findByRole('dialog', { name: 'Delete this comment?' })
     await user.click(within(commentConfirmation).getByRole('button', { name: 'Delete comment' }))
     await waitFor(async () => expect(await commentsService.getById(directorComment.id)).toBeNull())
 
-    vi.useFakeTimers()
-    try {
-      vi.setSystemTime(new Date('2026-11-25T12:00:00.000Z'))
-      await act(async () => {
-        fireEvent.change(statusSelect, { target: { value: 'VIEWED' } })
-        await Promise.resolve()
-      })
-      const firstView = await issuesService.getById('issue-1')
-      expect(firstView).toMatchObject({
-        status: 'VIEWED',
-        viewedAt: '2026-11-25T12:00:00.000Z',
-        viewedById: director.id,
-      })
+    await user.click(resolvedButton)
+    expect(await screen.findByText('Issue status updated to Resolved.')).toBeInTheDocument()
+    expect(await issuesService.getById('issue-1')).toMatchObject({
+      status: 'RESOLVED',
+      resolvedById: director.id,
+    })
+    expect(resolvedButton).toBeDisabled()
+    expect(inProgressButton).toBeEnabled()
 
-      vi.setSystemTime(new Date('2026-11-25T12:01:00.000Z'))
-      await act(async () => {
-        fireEvent.change(statusSelect, { target: { value: 'IN_PROGRESS' } })
-        await Promise.resolve()
-      })
-      vi.setSystemTime(new Date('2026-11-25T12:02:00.000Z'))
-      await act(async () => {
-        fireEvent.change(statusSelect, { target: { value: 'VIEWED' } })
-        await Promise.resolve()
-      })
-      expect(await issuesService.getById('issue-1')).toMatchObject({
-        status: 'VIEWED',
-        viewedAt: firstView.viewedAt,
-        viewedById: firstView.viewedById,
-        statusUpdatedAt: '2026-11-25T12:02:00.000Z',
-      })
-    } finally {
-      vi.useRealTimers()
-    }
+    await user.click(inProgressButton)
+    expect(await screen.findByText('Issue status updated to In progress.')).toBeInTheDocument()
+    expect(await issuesService.getById('issue-1')).toMatchObject({ status: 'IN_PROGRESS' })
+    expect(inProgressButton).toBeDisabled()
+    expect(resolvedButton).toBeEnabled()
 
     await user.click(screen.getByRole('button', { name: 'Delete issue' }))
     const issueConfirmation = await screen.findByRole('dialog', { name: 'Delete this class issue?' })
@@ -301,9 +394,77 @@ describe('Class Issues experience', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Issue deleted. Platform users have been notified.')
     expect(await issuesService.getById('issue-1')).toBeNull()
     expect(await commentsService.getAll({ issueId: 'issue-1' })).toHaveLength(0)
-    expect((await getMockDatabaseSnapshot()).notifications).toHaveLength(
-      (await getMockDatabaseSnapshot()).users.length,
-    )
+    const database = await getMockDatabaseSnapshot()
+    const deletionNotices = database.notifications.filter((notification) => (
+      notification.itemId === 'issue-1' && notification.type === 'ISSUE_DELETED'
+    ))
+    expect(deletionNotices).toHaveLength(database.users.length)
+    expect(deletionNotices.map((notification) => notification.recipientId).sort())
+      .toEqual(database.users.map((account) => account.id).sort())
     expect(router.state.location.pathname).toBe('/director/issues')
+  })
+
+  it('automatically transitions a PENDING issue to VIEWED once when opened by a Director and supports In progress and Resolved actions', async () => {
+    await transact((database) => {
+      database.issues.push({
+        id: 'issue-pending',
+        classId: 'class-ginf-2',
+        submittedById: 'representative-1',
+        title: 'Broken projector cable',
+        description: 'HDMI cable in room A3 needs replacement.',
+        submittedAt: '2026-11-26T09:00:00.000Z',
+        status: 'PENDING',
+      })
+    })
+    const updateSpy = vi.spyOn(issuesService, 'updateStatus')
+    const user = userEvent.setup()
+
+    const firstOpen = await renderIssuesRoute('/director/issues/issue-pending', director)
+    expect(await screen.findByRole('heading', { name: 'Broken projector cable' })).toBeInTheDocument()
+    await waitFor(async () => {
+      expect(await issuesService.getById('issue-pending')).toMatchObject({
+        status: 'VIEWED',
+        viewedById: director.id,
+      })
+    })
+    expect(updateSpy).toHaveBeenCalledTimes(1)
+    expect(within(screen.getByRole('heading', { name: 'Broken projector cable' }).closest('header')).getByText('Viewed'))
+      .toBeInTheDocument()
+    expect(screen.queryByLabelText('Issue status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /viewed/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark as In progress' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Mark as Resolved' })).toBeEnabled()
+    firstOpen.unmount()
+    firstOpen.router.dispose()
+
+    updateSpy.mockClear()
+    const secondOpen = await renderIssuesRoute('/director/issues/issue-pending', director)
+    expect(await screen.findByRole('heading', { name: 'Broken projector cable' })).toBeInTheDocument()
+    expect(updateSpy).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Mark as In progress' }))
+    expect(await screen.findByText('Issue status updated to In progress.')).toBeInTheDocument()
+    expect(await issuesService.getById('issue-pending')).toMatchObject({ status: 'IN_PROGRESS' })
+    expect(screen.getByRole('button', { name: 'Mark as In progress' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Mark as Resolved' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Mark as Resolved' }))
+    expect(await screen.findByText('Issue status updated to Resolved.')).toBeInTheDocument()
+    expect(await issuesService.getById('issue-pending')).toMatchObject({
+      status: 'RESOLVED',
+      resolvedById: director.id,
+    })
+    expect(screen.getByRole('button', { name: 'Mark as Resolved' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Mark as In progress' })).toBeEnabled()
+
+    secondOpen.unmount()
+    secondOpen.router.dispose()
+    updateSpy.mockClear()
+
+    await renderIssuesRoute('/director/issues/issue-pending', director)
+    expect(await screen.findByRole('heading', { name: 'Broken projector cable' })).toBeInTheDocument()
+    expect(updateSpy).not.toHaveBeenCalled()
+    expect((await getMockDatabaseSnapshot()).notifications).toEqual([])
   })
 })

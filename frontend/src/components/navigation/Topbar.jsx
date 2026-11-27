@@ -38,6 +38,8 @@ function Topbar() {
         ? 'Class issues'
         : location.pathname === ROUTES.PROFILE
           ? 'Profile'
+          : location.pathname === ROUTES.STUDENT.MY_ACTIVITY
+            ? 'My Activity'
           : 'NEXUS'
 
   return (
@@ -122,6 +124,54 @@ function Topbar() {
             >
               My Profile
             </DropdownItem>
+
+            {currentUser.role === USER_ROLES.ASSOCIATION && (
+              <div className="lg:hidden">
+                <DropdownDivider />
+                <DropdownItem
+                  icon={<NavigationIcon name="message-square-warning" className="size-4" />}
+                  onClick={() => navigate(ROUTES.ISSUES)}
+                >
+                  Class Issues
+                </DropdownItem>
+                <DropdownItem
+                  icon={<NavigationIcon name="activity" className="size-4" />}
+                  onClick={() => navigate(ROUTES.STUDENT.MY_ACTIVITY)}
+                >
+                  My Activity
+                </DropdownItem>
+              </div>
+            )}
+
+            {currentUser.role === USER_ROLES.DIRECTOR && (
+              <div className="lg:hidden">
+                <DropdownDivider />
+                <DropdownItem
+                  icon={<NavigationIcon name="layout-dashboard" className="size-4" />}
+                  onClick={() => navigate(ROUTES.DIRECTOR.DASHBOARD)}
+                >
+                  Dashboard
+                </DropdownItem>
+                <DropdownItem
+                  icon={<NavigationIcon name="users" className="size-4" />}
+                  onClick={() => navigate(ROUTES.DIRECTOR.STUDENTS)}
+                >
+                  User Deletion
+                </DropdownItem>
+                <DropdownItem
+                  icon={<NavigationIcon name="building-2" className="size-4" />}
+                  onClick={() => navigate(ROUTES.DIRECTOR.ASSOCIATIONS)}
+                >
+                  Associations Management
+                </DropdownItem>
+                <DropdownItem
+                  icon={<NavigationIcon name="user-check" className="size-4" />}
+                  onClick={() => navigate(ROUTES.DIRECTOR.REPRESENTATIVES)}
+                >
+                  Representatives Management
+                </DropdownItem>
+              </div>
+            )}
 
             <DropdownItem
               icon={<NavigationIcon name="settings" className="size-4" />}

@@ -84,7 +84,14 @@ describe('mock database', () => {
         ? userIds.has(event.ownerId)
         : associationIds.has(event.ownerId)
     ))).toBe(true)
-    expect(snapshot.events.every((event) => event.participantAvatarIds.every((id) => userIds.has(id)))).toBe(true)
+    expect(snapshot.events.every((event) => {
+      const registrations = snapshot.registrations.filter(({ eventId }) => eventId === event.id)
+      return event.participantCount === registrations.length &&
+        event.participantAvatarIds.length === registrations.length &&
+        event.participantAvatarIds.every((id) => (
+          userIds.has(id) && registrations.some((registration) => registration.userId === id)
+        ))
+    })).toBe(true)
     expect(snapshot.registrations.every((registration) => (
       eventIds.has(registration.eventId) && userIds.has(registration.userId)
     ))).toBe(true)
@@ -156,7 +163,7 @@ describe('mock database', () => {
   it('persists mutations in localStorage and reset restores the exact seed', async () => {
     await getMockDatabaseSnapshot()
     const stored = JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY))
-    expect(stored.version).toBe(2)
+    expect(stored.version).toBe(3)
     stored.database.posts[0].content = 'Persisted edit'
     localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(stored))
 
@@ -180,7 +187,46 @@ describe('mock database', () => {
 
     expect(migrated.posts[0].content).toBe('Keep this legacy post')
     expect(migrated.notifications).toEqual([])
-    expect(JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY)).version).toBe(2)
+    expect(JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY)).version).toBe(3)
+  })
+
+  it('migrates version 2 storage while preserving user data and reconciling event participation', async () => {
+    const legacyDatabase = JSON.parse(JSON.stringify(seedData))
+    legacyDatabase.users[0].bio = 'Persisted profile detail'
+    legacyDatabase.events[0].participantCount = 48
+    legacyDatabase.events[0].participantAvatarIds = ['student-2', 'representative-1']
+    legacyDatabase.events[1].participantCount = 32
+    legacyDatabase.events[1].participantAvatarIds = ['representative-1', 'student-2', 'student-1']
+    localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      database: legacyDatabase,
+    }))
+
+    const migrated = await getMockDatabaseSnapshot()
+
+    expect(migrated.users[0].bio).toBe('Persisted profile detail')
+    expect(migrated.events.map(({ participantCount, participantAvatarIds }) => ({
+      participantCount,
+      participantAvatarIds,
+    }))).toEqual([
+      { participantCount: 1, participantAvatarIds: ['student-2'] },
+      { participantCount: 1, participantAvatarIds: ['student-1'] },
+    ])
+    expect(JSON.parse(localStorage.getItem(MOCK_STORAGE_KEY)).version).toBe(3)
+  })
+
+  it('rejects event participation counts or avatars that disagree with registrations', async () => {
+    await expect(transact((database) => {
+      database.events[0].participantCount += 1
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+    await expect(transact((database) => {
+      database.events[0].participantAvatarIds = []
+    })).rejects.toMatchObject({ code: 'INVALID_DATABASE' })
+
+    expect((await getCollection('events')).find(({ id }) => id === 'event-1')).toMatchObject({
+      participantCount: 1,
+      participantAvatarIds: ['student-2'],
+    })
   })
 
   it('reports corrupt persisted data and allows an explicit reset', async () => {

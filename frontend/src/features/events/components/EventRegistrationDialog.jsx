@@ -66,7 +66,7 @@ function EventRegistrationDialog({ event, userId, onClose, onRegistered }) {
               You’re registered for {registeredEvent.title}.
             </p>
             <p className="mt-1 text-sm text-emerald-700">
-              The event now has {registeredEvent.participantCount} participants.
+              The event now has {registeredEvent.participantCount} participant{registeredEvent.participantCount === 1 ? '' : 's'}.
             </p>
           </div>
           <div className="flex justify-end">

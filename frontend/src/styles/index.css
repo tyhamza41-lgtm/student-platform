@@ -110,3 +110,13 @@ img {
 #main-content:focus {
   outline: none;
 }
+
+@media (hover: none), (pointer: coarse) {
+  .profile-photo-camera-badge {
+    display: flex;
+  }
+
+  .profile-photo-change-overlay {
+    display: none;
+  }
+}

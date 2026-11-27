@@ -6,13 +6,21 @@ import {
   requireActor,
   requireRecord,
 } from '../../mocks/serviceUtils.js'
+import {
+  announceNotificationsChanged,
+  createCreationNotifications,
+} from '../notifications/notifications.service.js'
 
-function assertCanManagePost(database, post, actorId) {
+function assertCanManagePost(database, post, actorId, { allowDirectorOverride = false } = {}) {
   const actor = requireRecord(database, 'users', actorId)
-  if (actor.role === USER_ROLES.DIRECTOR && actor.isActive !== false) return actor
-  if (post.authorId !== actor.id || actor.isActive === false) {
+  if (actor.isActive === false) {
+    throw new MockDataError('FORBIDDEN', 'Inactive accounts cannot manage posts.')
+  }
+  if (allowDirectorOverride && actor.role === USER_ROLES.DIRECTOR) return actor
+  if (post.authorId !== actor.id) {
     throw new MockDataError('FORBIDDEN', 'You can only manage your own posts.')
   }
+  if (actor.role === USER_ROLES.DIRECTOR) return actor
   if (
     actor.role === USER_ROLES.ASSOCIATION &&
     actor.associationId === post.associationId
@@ -77,11 +85,13 @@ function toPostRecord(database, data, author, id) {
 }
 
 export async function getAll(filters = {}) {
-  const [records, classes] = await Promise.all([
+  const [records, classes, users] = await Promise.all([
     getCollection('posts'),
     getCollection('classes'),
+    getCollection('users'),
   ])
   const classNames = new Map(classes.map((studentClass) => [studentClass.id, studentClass.name]))
+  const usersById = new Map(users.map((user) => [user.id, user]))
   return records.filter((post) => (
     (!filters.authorId || post.authorId === filters.authorId) &&
     (!filters.classId || post.classId === filters.classId) &&
@@ -89,17 +99,24 @@ export async function getAll(filters = {}) {
     (!filters.status || post.status === filters.status)
   )).map((post) => ({
     ...post,
+    authorName: usersById.get(post.authorId)?.name || post.authorName,
+    authorAvatar: usersById.get(post.authorId)?.avatarUrl || post.authorAvatar || null,
     ...(post.classId ? { className: classNames.get(post.classId) || post.classId } : {}),
   }))
 }
 
 export async function getById(id) {
   const post = await getRecord('posts', id)
-  if (!post || !post.classId) return post
-  const studentClass = await getRecord('classes', post.classId)
+  if (!post) return post
+  const [studentClass, author] = await Promise.all([
+    post.classId ? getRecord('classes', post.classId) : null,
+    getRecord('users', post.authorId),
+  ])
   return {
     ...post,
-    className: studentClass?.name || post.classId,
+    authorName: author?.name || post.authorName,
+    authorAvatar: author?.avatarUrl || post.authorAvatar || null,
+    ...(post.classId ? { className: studentClass?.name || post.classId } : {}),
   }
 }
 
@@ -109,7 +126,7 @@ export async function create(data, actorId) {
   if (data.imageUrl !== undefined && data.imageUrl !== null && typeof data.imageUrl !== 'string') {
     throw new MockDataError('VALIDATION_ERROR', 'Post image URL must be text or null.')
   }
-  return transact((database, createId) => {
+  const post = await transact((database, createId) => {
     const author = requireActor(
       database,
       actorId,
@@ -123,8 +140,21 @@ export async function create(data, actorId) {
     }
     const post = toPostRecord(database, data, author, createId('posts'))
     database.posts.push(post)
+    const associationName = author.role === USER_ROLES.ASSOCIATION
+      ? database.associations.find((item) => item.id === author.associationId)?.name
+      : null
+    createCreationNotifications(database, createId, {
+      itemType: 'POST',
+      item: post,
+      actor: author,
+      itemTitle: post.content.slice(0, 120),
+      itemSummary: post.content,
+      context: associationName ? { associationName } : null,
+    })
     return post
   })
+  announceNotificationsChanged()
+  return post
 }
 
 export async function update(id, data, actorId) {
@@ -147,24 +177,10 @@ export async function update(id, data, actorId) {
 export async function deletePost(id, actorId) {
   return transact((database) => {
     const post = requireRecord(database, 'posts', id)
-    assertCanManagePost(database, post, actorId)
+    assertCanManagePost(database, post, actorId, { allowDirectorOverride: true })
     database.comments = database.comments.filter((comment) => comment.postId !== id)
     database.reactions = database.reactions.filter((reaction) => reaction.postId !== id)
     database.posts = database.posts.filter((item) => item.id !== id)
-    return post
-  })
-}
-
-export async function setModerationStatus(id, status, directorId) {
-  if (!['PUBLISHED', 'HIDDEN', 'REMOVED'].includes(status)) {
-    throw new MockDataError('VALIDATION_ERROR', `Unsupported post moderation status "${status}".`)
-  }
-  return transact((database) => {
-    requireActor(database, directorId, [USER_ROLES.DIRECTOR])
-    const post = requireRecord(database, 'posts', id)
-    post.status = status
-    post.moderatedById = directorId
-    post.moderatedAt = new Date().toISOString()
     return post
   })
 }

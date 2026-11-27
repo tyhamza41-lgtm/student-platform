@@ -8,7 +8,7 @@ import {
 import { USER_ROLES, REPRESENTATIVE_STATUS } from '../constants/roles.js'
 
 export const MOCK_STORAGE_KEY = 'student-platform.mock-database.v1'
-const MOCK_DATABASE_VERSION = 2
+const MOCK_DATABASE_VERSION = 3
 const COLLECTIONS = [
   'users',
   'classes',
@@ -134,6 +134,9 @@ function assertDatabaseIntegrity(database) {
     if (new Set(activeIds).size !== activeIds.length) {
       fail('INVALID_DATABASE', `Class "${studentClass.id}" contains duplicate representatives.`)
     }
+    if (activeIds.length > 3) {
+      fail('INVALID_DATABASE', `Class "${studentClass.id}" cannot have more than 3 active representatives.`)
+    }
     for (const studentId of studentClass.studentIds || []) {
       const student = find('users', studentId)
       if (!student || student.role !== USER_ROLES.STUDENT || student.classId !== studentClass.id) {
@@ -213,7 +216,22 @@ function assertDatabaseIntegrity(database) {
     } else {
       fail('INVALID_DATABASE', `Event "${event.id}" has an invalid owner type.`)
     }
-    for (const participantId of event.participantAvatarIds || []) {
+    if (!Array.isArray(event.participantAvatarIds)) {
+      fail('INVALID_DATABASE', `Event "${event.id}" has invalid participant avatars.`)
+    }
+    const eventRegistrations = database.registrations.filter((registration) => registration.eventId === event.id)
+    const registeredUserIds = new Set(eventRegistrations.map((registration) => registration.userId))
+    const participantAvatarIds = new Set(event.participantAvatarIds)
+    if (
+      !Number.isInteger(event.participantCount) ||
+      event.participantCount !== eventRegistrations.length ||
+      participantAvatarIds.size !== event.participantAvatarIds.length ||
+      participantAvatarIds.size !== registeredUserIds.size ||
+      [...registeredUserIds].some((userId) => !participantAvatarIds.has(userId))
+    ) {
+      fail('INVALID_DATABASE', `Event "${event.id}" participation must match its registrations.`)
+    }
+    for (const participantId of event.participantAvatarIds) {
       requireReference('users', participantId, `Event "${event.id}" participant avatars`)
     }
   }
@@ -242,16 +260,65 @@ function assertDatabaseIntegrity(database) {
     if (!Object.values(NOTIFICATION_TYPES).includes(notification.type)) {
       fail('INVALID_DATABASE', `Notification "${notification.id}" has an invalid type.`)
     }
-    if (
+    const creationItemTypes = {
+      [NOTIFICATION_TYPES.POST_CREATED]: 'POST',
+      [NOTIFICATION_TYPES.EVENT_CREATED]: 'EVENT',
+      [NOTIFICATION_TYPES.CLASS_ISSUE_CREATED]: 'CLASS_ISSUE',
+    }
+    if (creationItemTypes[notification.type]) {
+      if (
+        notification.itemType !== creationItemTypes[notification.type] ||
+        typeof notification.itemId !== 'string' ||
+        typeof notification.itemTitle !== 'string' ||
+        typeof notification.itemSummary !== 'string' ||
+        typeof notification.creatorId !== 'string' ||
+        typeof notification.creatorName !== 'string' ||
+        typeof notification.creatorRole !== 'string' ||
+        typeof notification.message !== 'string' ||
+        typeof notification.href !== 'string' ||
+        !notification.itemSnapshot ||
+        typeof notification.itemSnapshot.title !== 'string' ||
+        typeof notification.createdAt !== 'string' ||
+        Number.isNaN(new Date(notification.createdAt).getTime()) ||
+        (notification.readAt !== null && Number.isNaN(new Date(notification.readAt).getTime()))
+      ) {
+        fail('INVALID_DATABASE', `Notification "${notification.id}" is missing creation details.`)
+      }
+      requireReference('users', notification.creatorId, `Notification "${notification.id}" creator`)
+    } else if (
       !['EVENT', 'CLASS_ISSUE'].includes(notification.itemType) ||
       typeof notification.itemId !== 'string' ||
       typeof notification.itemTitle !== 'string' ||
-      typeof notification.directorName !== 'string' ||
       typeof notification.message !== 'string' ||
-      Number.isNaN(new Date(notification.deletedAt).getTime()) ||
       (notification.readAt !== null && Number.isNaN(new Date(notification.readAt).getTime()))
     ) {
       fail('INVALID_DATABASE', `Notification "${notification.id}" is missing moderation details.`)
+    }
+    if (notification.type === NOTIFICATION_TYPES.EVENT_UPDATED) {
+      if (
+        typeof notification.associationName !== 'string' ||
+        typeof notification.actionAt !== 'string' ||
+        Number.isNaN(new Date(notification.actionAt).getTime()) ||
+        !notification.eventSnapshot ||
+        typeof notification.eventSnapshot.title !== 'string'
+      ) {
+        fail('INVALID_DATABASE', `Notification "${notification.id}" is missing Event update details.`)
+      }
+    } else if (notification.type === NOTIFICATION_TYPES.EVENT_DELETED && notification.associationName) {
+      if (
+        typeof notification.actionAt !== 'string' ||
+        Number.isNaN(new Date(notification.actionAt).getTime()) ||
+        !notification.eventSnapshot ||
+        typeof notification.eventSnapshot.title !== 'string'
+      ) {
+        fail('INVALID_DATABASE', `Notification "${notification.id}" is missing Association deletion details.`)
+      }
+    } else if (!creationItemTypes[notification.type] && (
+      typeof notification.directorName !== 'string' ||
+      typeof notification.deletedAt !== 'string' ||
+      Number.isNaN(new Date(notification.deletedAt).getTime())
+    )) {
+      fail('INVALID_DATABASE', `Notification "${notification.id}" is missing Director moderation details.`)
     }
   }
 
@@ -284,9 +351,16 @@ function readEnvelope(storage) {
   if (!envelope?.database) {
     fail('CORRUPT_STORAGE', 'Stored mock data has an unsupported version. Reset the mock database to recover.')
   }
-  if (envelope.version === 1) {
+  if (envelope.version === 1 || envelope.version === 2) {
     const migratedDatabase = clone(envelope.database)
-    migratedDatabase.notifications ||= []
+    if (envelope.version === 1) migratedDatabase.notifications ||= []
+    for (const event of migratedDatabase.events) {
+      const eventRegistrations = migratedDatabase.registrations.filter(
+        (registration) => registration.eventId === event.id,
+      )
+      event.participantCount = eventRegistrations.length
+      event.participantAvatarIds = [...new Set(eventRegistrations.map((registration) => registration.userId))]
+    }
     assertDatabaseIntegrity(migratedDatabase)
     writeEnvelope(storage, migratedDatabase)
     return migratedDatabase

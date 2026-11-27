@@ -51,6 +51,38 @@ async function renderPostsRoute(path, user = authUsers.student, { clearEvents = 
 }
 
 describe('posts experience', () => {
+  it('opens the actual author profile from a Post photo', async () => {
+    const user = userEvent.setup()
+    const { router } = await renderPostsRoute('/feed')
+    const post = await screen.findByText('Class Representative')
+    const authorLink = within(post.closest('article'))
+      .getByRole('link', { name: "View Omar Benali's profile" })
+
+    await user.click(authorLink)
+
+    expect(await screen.findByRole('heading', { name: 'Omar Benali' })).toBeInTheDocument()
+    expect(screen.getByText('Class/Group: GINF 2 — Génie Informatique (class-ginf-2)')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/users/representative-1')
+  })
+
+  it('opens comment author profiles from comment photos and names', async () => {
+    const user = userEvent.setup()
+    const feed = await renderPostsRoute('/feed')
+    await user.click(screen.getByRole('button', { name: 'Show comments for post by Omar Benali' }))
+    await user.click(await screen.findByRole('link', { name: "View Sara Amrani's profile" }))
+
+    expect(await screen.findByRole('heading', { name: 'Sara Amrani' })).toBeInTheDocument()
+    expect(screen.getByText('Class/Group: GINF 2 — Génie Informatique (class-ginf-2)')).toBeInTheDocument()
+    feed.unmount()
+    feed.router.dispose()
+
+    const details = await renderPostsRoute('/posts/post-1')
+    await user.click(await screen.findByRole('link', { name: 'Sara Amrani' }))
+
+    expect(await screen.findByRole('heading', { name: 'Sara Amrani' })).toBeInTheDocument()
+    expect(details.router.state.location.pathname).toBe('/users/student-3')
+  })
+
   it('loads the dashboard feed from the centralized posts service', async () => {
     await renderPostsRoute('/feed')
 
@@ -212,15 +244,87 @@ describe('posts experience', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
   })
 
-  it('lets the Director hide and restore a post through moderation controls', async () => {
-    const user = userEvent.setup()
-    await renderPostsRoute('/feed', authUsers.director)
+  it('does not render Hide or Restore moderation controls for a Director on the feed or post details', async () => {
+    const feedView = await renderPostsRoute('/feed', authUsers.director)
     const post = await screen.findByText(/Rappel important : le cours de programmation distribuée/)
     const article = post.closest('article')
-    await user.click(within(article).getByRole('button', { name: 'Hide' }))
-    await waitFor(async () => expect((await postsService.getById('post-1')).status).toBe('HIDDEN'))
-    await user.click(within(article).getByRole('button', { name: 'Restore' }))
-    await waitFor(async () => expect((await postsService.getById('post-1')).status).toBe('PUBLISHED'))
+    expect(within(article).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(within(article).queryByRole('button', { name: /^(Hide|Restore)$/ })).not.toBeInTheDocument()
+    feedView.unmount()
+    feedView.router.dispose()
+
+    await renderPostsRoute('/posts/post-1', authUsers.director)
+    await screen.findByText(/Rappel important : le cours de programmation distribuée/)
+    expect(screen.queryByRole('button', { name: /^(Hide|Restore)$/ })).not.toBeInTheDocument()
+    expect(postsService.setModerationStatus).toBeUndefined()
+  })
+
+  it('allows a Director to edit only their own posts while deleting any post, using canonical authorId', async () => {
+    const user = userEvent.setup()
+    const feedView = await renderPostsRoute('/feed', authUsers.director)
+
+    const otherUserPost = (await screen.findByText(/Rappel important : le cours de programmation distribuée/))
+      .closest('article')
+    expect(within(otherUserPost).queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(within(otherUserPost).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+
+    const ownPost = (await screen.findByText(/IA responsable et métiers du numérique/))
+      .closest('article')
+    expect(within(ownPost).getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/posts/post-3/edit')
+    expect(within(ownPost).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+
+    feedView.unmount()
+    feedView.router.dispose()
+
+    // Service-level ownership check using canonical authorId (even if display name matches)
+    await expect(postsService.update('post-1', { content: 'Unauthorized Director edit' }, authUsers.director.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+
+    await transact((database) => {
+      database.posts.push({
+        id: 'post-same-name',
+        authorId: 'student-2',
+        authorName: authUsers.director.name,
+        authorRole: 'Student',
+        publishedAt: '2026-11-26T10:00:00.000Z',
+        content: 'Post with matching display name.',
+        imageUrl: null,
+        likeCount: 0,
+        dislikeCount: 0,
+        status: 'PUBLISHED',
+      })
+    })
+    await expect(postsService.update('post-same-name', { content: 'Spoofed name edit' }, authUsers.director.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+
+    // Director cannot edit another user's post via edit route
+    const forbiddenEditView = await renderPostsRoute('/posts/post-1/edit', authUsers.director)
+    expect(await screen.findByRole('alert')).toHaveTextContent('You do not have permission to edit this post.')
+    forbiddenEditView.unmount()
+    forbiddenEditView.router.dispose()
+
+    // Director can edit their own post via UI and service
+    const ownEditView = await renderPostsRoute('/posts/post-3/edit', authUsers.director)
+    const contentInput = await screen.findByRole('textbox', { name: 'Post content' })
+    await user.clear(contentInput)
+    await user.type(contentInput, 'Updated Director announcement.')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByText('Updated Director announcement.')).toBeInTheDocument()
+    expect((await postsService.getById('post-3')).content).toBe('Updated Director announcement.')
+    ownEditView.unmount()
+    ownEditView.router.dispose()
+
+    // Director can still delete another user's post via UI and service
+    await renderPostsRoute('/posts/post-1', authUsers.director)
+    const detailArticle = (await screen.findByText(/Rappel important : le cours de programmation distribuée/))
+      .closest('article')
+    expect(within(detailArticle).queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument()
+    await user.click(within(detailArticle).getByRole('button', { name: 'Delete' }))
+    const dialog = screen.getByRole('dialog', { name: 'Delete this post?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Delete post' }))
+    await waitFor(async () => {
+      expect(await postsService.getById('post-1')).toBeNull()
+    })
   })
 
   it('shows post details, creates comments, links profiles, and deletes the author’s comment', async () => {
@@ -250,25 +354,53 @@ describe('posts experience', () => {
     await waitFor(() => expect(screen.queryByText('I will review the slides.')).not.toBeInTheDocument())
   })
 
-  it('allows the Director to delete another user’s comment and Associations to comment on their own post', async () => {
+  it('allows Associations to comment on Posts from every author type', async () => {
     const user = userEvent.setup()
-    const directorView = await renderPostsRoute('/posts/post-1', authUsers.director)
-    const directorComment = screen.getByText('Merci pour le rappel, Omar !').closest('li')
-    await user.click(within(directorComment).getByRole('button', { name: 'Delete' }))
+    const cases = [
+      ['post-4', 'Student'],
+      ['post-1', 'Class Representative'],
+      ['post-2', 'Student Association'],
+      ['post-3', 'Director'],
+    ]
+
+    for (const [postId] of cases) {
+      const view = await renderPostsRoute(`/posts/${postId}`, authUsers.association)
+      const content = `Association reply to ${postId}`
+      await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), content)
+      await user.click(screen.getByRole('button', { name: 'Post comment' }))
+      const created = await screen.findByText(content)
+      const row = created.closest('li')
+      expect(within(row).getByRole('link', { name: 'Bureau des Arts' }))
+        .toHaveAttribute('href', '/users/association-1')
+      expect(within(row).getByRole('img', { name: 'Bureau des Arts profile' }))
+        .toHaveAttribute('src', expect.stringContaining('photo-1529156069898'))
+      expect(await commentsService.getAll({ postId })).toEqual(
+        expect.arrayContaining([expect.objectContaining({
+          content,
+          authorId: authUsers.association.id,
+          authorName: 'Bureau des Arts',
+        })]),
+      )
+      view.unmount()
+      view.router.dispose()
+    }
+
+    await expect(commentsService.add({
+      postId: 'missing-post',
+      content: 'A valid-looking comment.',
+    }, authUsers.association.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('preserves Director moderation rights for Post comments', async () => {
+    const user = userEvent.setup()
+    const view = await renderPostsRoute('/posts/post-1', authUsers.director)
+    const existing = screen.getByText('Merci pour le rappel, Omar !').closest('li')
+    await user.click(within(existing).getByRole('button', { name: 'Delete' }))
     const dialog = screen.getByRole('dialog', { name: 'Delete this comment?' })
     await user.click(within(dialog).getByRole('button', { name: 'Delete comment' }))
     await waitFor(async () => expect(await commentsService.getById('comment-1')).toBeNull())
-
-    directorView.unmount()
-    directorView.router.dispose()
-    await renderPostsRoute('/posts/post-2', authUsers.association)
-    await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), 'The association team will be there.')
-    await user.click(screen.getByRole('button', { name: 'Post comment' }))
-    expect(await screen.findByText('The association team will be there.')).toBeInTheDocument()
-    await expect(commentsService.add({
-      postId: 'post-1',
-      content: 'This is not our post.',
-    }, authUsers.association.id)).rejects.toMatchObject({ code: 'FORBIDDEN' })
+    view.unmount()
+    view.router.dispose()
   })
 
   it('opens Like and Dislike user lists with profile photos and profile links', async () => {

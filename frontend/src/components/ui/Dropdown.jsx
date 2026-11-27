@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, createContext, useContext, isValidElement } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  createContext,
+  useContext,
+  isValidElement,
+  cloneElement,
+} from 'react'
 import { cn } from '../../utils/cn'
 
 const DropdownContext = createContext(null)
@@ -145,7 +153,10 @@ function Dropdown({
           aria-expanded={isOpen}
           className="inline-flex cursor-pointer"
         >
-          {trigger}
+          {cloneElement(trigger, {
+            'aria-haspopup': 'menu',
+            'aria-expanded': isOpen,
+          })}
         </div>
       )
     }

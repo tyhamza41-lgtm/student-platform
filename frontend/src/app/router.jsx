@@ -14,7 +14,13 @@ import MyPostsPage from '../features/posts/pages/MyPostsPage'
 import IssuesListPage from '../features/issues/pages/IssuesListPage'
 import IssueDetailsPage from '../features/issues/pages/IssueDetailsPage'
 import IssueFormPage from '../features/issues/pages/IssueFormPage'
+import ProfilePage from '../features/profiles/pages/ProfilePage'
 import PublicProfilePage from '../features/profiles/pages/PublicProfilePage'
+import MyActivityPage from '../features/activity/pages/MyActivityPage'
+import DirectorDashboard from '../features/director/pages/DirectorDashboard'
+import StudentsPage from '../features/director/pages/StudentsPage'
+import AssociationsPage from '../features/director/pages/AssociationsPage'
+import RepresentativesPage from '../features/director/pages/RepresentativesPage'
 import MockLoginPage from '../features/auth/pages/MockLoginPage'
 import { ROUTES } from '../constants/routes'
 import { USER_ROLES } from '../constants/roles'
@@ -89,7 +95,7 @@ const router = createBrowserRouter([
           },
           {
             path: ROUTES.PROFILE,
-            element: <PlaceholderPage title="My Profile" description="Manage your profile." />,
+            element: <ProfilePage />,
           },
           {
             path: ROUTES.USER_PROFILE(':userId'),
@@ -97,11 +103,7 @@ const router = createBrowserRouter([
           },
           {
             path: ROUTES.STUDENT.MY_ACTIVITY,
-            element: (
-              <RequireRole roles={[USER_ROLES.STUDENT]}>
-                <PlaceholderPage title="My Activity" description="Your posts and engagement." />
-              </RequireRole>
-            ),
+            element: <MyActivityPage />,
           },
           {
             path: ROUTES.REPRESENTATIVE.CREATE_POST,
@@ -171,7 +173,7 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.DASHBOARD,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Dashboard" description="Platform overview." />
+                <DirectorDashboard />
               </RequireRole>
             ),
           },
@@ -187,7 +189,7 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.STUDENTS,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Students" description="Manage student accounts." />
+                <StudentsPage />
               </RequireRole>
             ),
           },
@@ -195,7 +197,7 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.ASSOCIATIONS,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Associations" description="Manage associations." />
+                <AssociationsPage />
               </RequireRole>
             ),
           },
@@ -203,15 +205,7 @@ const router = createBrowserRouter([
             path: ROUTES.DIRECTOR.REPRESENTATIVES,
             element: (
               <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Representatives" description="Manage class representatives." />
-              </RequireRole>
-            ),
-          },
-          {
-            path: ROUTES.DIRECTOR.MODERATION,
-            element: (
-              <RequireRole roles={[USER_ROLES.DIRECTOR]}>
-                <PlaceholderPage title="Moderation" description="Content moderation queue." />
+                <RepresentativesPage />
               </RequireRole>
             ),
           },

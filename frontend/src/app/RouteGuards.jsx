@@ -11,8 +11,12 @@ function getRoleHomeRoute(user) {
 }
 
 export function RequireAuth({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, isInitializing } = useAuth()
   const location = useLocation()
+
+  if (isInitializing) {
+    return <p role="status" className="p-6 text-center text-sm text-slate-500">Restoring your session…</p>
+  }
 
   if (!isAuthenticated) {
     return (
@@ -28,7 +32,11 @@ export function RequireAuth({ children }) {
 }
 
 export function PublicOnlyRoute({ children }) {
-  const { currentUser, isAuthenticated } = useAuth()
+  const { currentUser, isAuthenticated, isInitializing } = useAuth()
+
+  if (isInitializing) {
+    return <p role="status" className="p-6 text-center text-sm text-slate-500">Checking your session…</p>
+  }
 
   return isAuthenticated
     ? <Navigate to={getRoleHomeRoute(currentUser)} replace />

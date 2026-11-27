@@ -2,8 +2,9 @@ import { USER_ROLES } from '../../constants/roles.js'
 import { getCollection, getRecord, MockDataError } from '../../mocks/mockDatabase.js'
 import * as associationsService from '../associations/associations.service.js'
 import * as issuesService from '../issues/issues.service.js'
-import * as postsService from '../posts/posts.service.js'
 import * as usersService from '../users/users.service.js'
+
+export { MAX_ACTIVE_REPRESENTATIVES_PER_CLASS } from '../users/users.service.js'
 
 async function assertDirector(directorId) {
   const director = await getRecord('users', directorId)
@@ -34,42 +35,30 @@ export async function getOverview(directorId) {
   }
 }
 
+export async function getUsers(directorId, filters = {}) {
+  await assertDirector(directorId)
+  const users = await usersService.getAll(filters)
+  return users.filter((user) => user.role !== USER_ROLES.DIRECTOR)
+}
+
+export async function deleteUser(userId, directorId) {
+  await assertDirector(directorId)
+  return usersService.deleteUser(userId, directorId)
+}
+
 export async function getStudents(directorId, filters = {}) {
   await assertDirector(directorId)
   return usersService.getAll({ ...filters, role: USER_ROLES.STUDENT })
 }
 
-export async function createStudent(data, directorId) {
-  await assertDirector(directorId)
-  return usersService.create({ ...data, role: USER_ROLES.STUDENT }, directorId)
-}
-
-export async function updateStudent(studentId, data, directorId) {
-  await assertDirector(directorId)
-  const student = await usersService.getById(studentId)
-  if (!student || student.role !== USER_ROLES.STUDENT) {
-    throw new MockDataError('NOT_FOUND', `Student "${studentId}" was not found.`)
-  }
-  return usersService.update(studentId, data, directorId)
-}
-
-export async function deleteStudent(studentId, directorId) {
-  await assertDirector(directorId)
-  const student = await usersService.getById(studentId)
-  if (!student || student.role !== USER_ROLES.STUDENT) {
-    throw new MockDataError('NOT_FOUND', `Student "${studentId}" was not found.`)
-  }
-  return usersService.deleteUser(studentId, directorId)
-}
-
-export async function setStudentActive(studentId, isActive, directorId) {
-  await assertDirector(directorId)
-  return usersService.setActive(studentId, isActive, directorId)
-}
-
 export async function getRepresentatives(directorId, filters = {}) {
   await assertDirector(directorId)
   return usersService.getRepresentatives(filters)
+}
+
+export async function getClasses(directorId) {
+  await assertDirector(directorId)
+  return getCollection('classes')
 }
 
 export async function assignRepresentative(studentId, classId, directorId) {
@@ -97,19 +86,9 @@ export async function updateAssociation(id, data, directorId) {
   return associationsService.update(id, data, directorId)
 }
 
-export async function setAssociationActive(id, isActive, directorId) {
-  await assertDirector(directorId)
-  return associationsService.setActive(id, isActive, directorId)
-}
-
 export async function deleteAssociation(id, directorId) {
   await assertDirector(directorId)
   return associationsService.deleteAssociation(id, directorId)
-}
-
-export async function moderatePost(postId, status, directorId) {
-  await assertDirector(directorId)
-  return postsService.setModerationStatus(postId, status, directorId)
 }
 
 export async function getClassIssues(directorId, filters = {}) {

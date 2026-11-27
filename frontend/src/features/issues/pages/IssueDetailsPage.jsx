@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import {
   Alert,
@@ -9,7 +9,6 @@ import {
   ConfirmDialog,
   EmptyState,
   FormField,
-  Select,
   Textarea,
 } from '../../../components/ui'
 import { ROUTES } from '../../../constants/routes'
@@ -60,6 +59,9 @@ function IssueDetailsPage({ directorMode = false }) {
   const [commentToDelete, setCommentToDelete] = useState(null)
   const [confirmIssueDelete, setConfirmIssueDelete] = useState(false)
   const [reload, setReload] = useState(0)
+  const autoViewedRef = useRef(new Set())
+  const isDirector = currentUser?.role === USER_ROLES.DIRECTOR && currentUser.isActive !== false
+  const canManageIssue = directorMode || isDirector
 
   useEffect(() => {
     let active = true
@@ -68,10 +70,10 @@ function IssueDetailsPage({ directorMode = false }) {
       setLoading(true)
       setError('')
       try {
-        const issueRecords = directorMode
+        const issueRecords = canManageIssue
           ? await directorService.getClassIssues(currentUser.id)
           : await issuesService.getAll()
-        const record = issueRecords.find((item) => item.id === issueId)
+        let record = issueRecords.find((item) => item.id === issueId)
         if (!record) {
           if (active) {
             setIssue(null)
@@ -79,6 +81,19 @@ function IssueDetailsPage({ directorMode = false }) {
             setError('This class issue is unavailable.')
           }
           return
+        }
+        if (
+          canManageIssue &&
+          record.status === issuesService.ISSUE_STATUS.PENDING &&
+          !autoViewedRef.current.has(record.id)
+        ) {
+          autoViewedRef.current.add(record.id)
+          const viewedRecord = await directorService.updateClassIssueStatus(
+            record.id,
+            issuesService.ISSUE_STATUS.VIEWED,
+            currentUser.id,
+          )
+          record = { ...record, ...viewedRecord }
         }
         const commentRecords = await commentsService.getAll({ issueId })
         if (active) {
@@ -97,7 +112,7 @@ function IssueDetailsPage({ directorMode = false }) {
 
     loadIssue()
     return () => { active = false }
-  }, [currentUser?.id, directorMode, issueId, reload])
+  }, [canManageIssue, currentUser?.id, issueId, reload])
 
   async function handleSubmitComment(event) {
     event.preventDefault()
@@ -131,14 +146,14 @@ function IssueDetailsPage({ directorMode = false }) {
     }
   }
 
-  async function handleStatusChange(event) {
-    if (!directorMode || !issue) return
+  async function updateIssueStatus(nextStatus) {
+    if (!canManageIssue || !issue || !nextStatus || nextStatus === issue.status) return
     setSavingStatus(true)
     setActionError('')
     try {
-      const updated = await issuesService.updateStatus(issue.id, event.target.value, currentUser.id)
+      const updated = await directorService.updateClassIssueStatus(issue.id, nextStatus, currentUser.id)
       setIssue({ ...issue, ...updated })
-      setSuccess('Issue status updated.')
+      setSuccess(`Issue status updated to ${STATUS_LABELS[updated.status] || updated.status}.`)
     } catch (statusError) {
       setActionError(statusError.message || 'The issue status could not be updated.')
     } finally {
@@ -147,12 +162,12 @@ function IssueDetailsPage({ directorMode = false }) {
   }
 
   async function handleDeleteIssue() {
-    if (!directorMode || !issue) return
+    if (!canManageIssue || !issue) return
     setDeletingIssue(true)
     setActionError('')
     try {
       await issuesService.deleteIssue(issue.id, currentUser.id)
-      navigate(ROUTES.DIRECTOR.ISSUES, {
+      navigate(directorMode ? ROUTES.DIRECTOR.ISSUES : ROUTES.ISSUES, {
         replace: true,
         state: { successMessage: 'Issue deleted. Platform users have been notified.' },
       })
@@ -171,7 +186,8 @@ function IssueDetailsPage({ directorMode = false }) {
   }
 
   const backRoute = directorMode ? ROUTES.DIRECTOR.ISSUES : ROUTES.ISSUES
-  const canComment = Boolean(currentUser) && currentUser.isActive !== false
+  const canComment = Boolean(currentUser) &&
+    currentUser.isActive !== false
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
@@ -272,35 +288,46 @@ function IssueDetailsPage({ directorMode = false }) {
               )}
             </dl>
 
-            {directorMode && (
+            {canManageIssue && (
               <section
                 aria-labelledby="issue-management-heading"
-                className="grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+                className="space-y-4 border-t border-slate-100 pt-5"
               >
-                <div className="space-y-2">
+                <div>
                   <h2 id="issue-management-heading" className="text-sm font-bold text-slate-900">
                     Manage issue
                   </h2>
-                  <FormField label="Issue status" id="issue-status">
-                    <Select
-                      id="issue-status"
-                      value={issue.status}
-                      onChange={handleStatusChange}
-                      disabled={savingStatus || deletingIssue}
-                      options={Object.values(issuesService.ISSUE_STATUS).map((status) => ({
-                          value: status,
-                          label: STATUS_LABELS[status] || status,
-                      }))}
-                    />
-                  </FormField>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Opening a pending issue marks it as Viewed automatically. Update progress to In progress or Resolved as needed.
+                  </p>
                 </div>
-                <Button
-                  variant="danger"
-                  onClick={() => setConfirmIssueDelete(true)}
-                  disabled={savingStatus || deletingIssue}
-                >
-                  Delete issue
-                </Button>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant={issue.status === issuesService.ISSUE_STATUS.IN_PROGRESS ? 'primary' : 'outline'}
+                      disabled={savingStatus || deletingIssue || issue.status === issuesService.ISSUE_STATUS.IN_PROGRESS}
+                      onClick={() => updateIssueStatus(issuesService.ISSUE_STATUS.IN_PROGRESS)}
+                    >
+                      Mark as In progress
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={issue.status === issuesService.ISSUE_STATUS.RESOLVED ? 'primary' : 'outline'}
+                      disabled={savingStatus || deletingIssue || issue.status === issuesService.ISSUE_STATUS.RESOLVED}
+                      onClick={() => updateIssueStatus(issuesService.ISSUE_STATUS.RESOLVED)}
+                    >
+                      Mark as Resolved
+                    </Button>
+                  </div>
+                  <Button
+                    variant="danger"
+                    onClick={() => setConfirmIssueDelete(true)}
+                    disabled={savingStatus || deletingIssue}
+                  >
+                    Delete issue
+                  </Button>
+                </div>
               </section>
             )}
           </Card>
@@ -310,11 +337,18 @@ function IssueDetailsPage({ directorMode = false }) {
               <h2 className="text-lg font-bold text-slate-950">
                 Comments <span className="text-slate-400">({comments.length})</span>
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Share a helpful update about this issue.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {canComment
+                  ? 'Share a helpful update about this issue.'
+                  : 'Updates shared about this issue.'}
+              </p>
             </div>
 
             {comments.length === 0 ? (
-              <EmptyState title="No comments yet" description="Be the first to add an update." />
+              <EmptyState
+                title="No comments yet"
+                description={canComment ? 'Be the first to add an update.' : 'There are no updates to view yet.'}
+              />
             ) : (
               <ul className="divide-y divide-slate-100">
                 {comments.map((comment) => (

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -7,15 +7,31 @@ import { AuthSession } from '../../../tests/auth-test-utils'
 import { users as authUsers } from '../../../tests/auth-fixtures'
 import { resetMockDatabase, transact } from '../../mocks/mockDatabase'
 import * as eventsService from './events.service'
+import * as profilesService from '../profiles/profiles.service'
 import EventsListPage from './pages/EventsListPage'
 import EventDetailsPage from './pages/EventDetailsPage'
 import EventFormPage from './pages/EventFormPage'
 import AssociationEventsPage from './pages/AssociationEventsPage'
 import StudentDashboard from '../students/pages/StudentDashboard'
+import PublicProfilePage from '../profiles/pages/PublicProfilePage'
+
+function futureIso(daysAhead = 3) {
+  return new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString()
+}
 
 beforeEach(async () => {
   localStorage.clear()
   await resetMockDatabase()
+  await transact((database) => {
+    const eventOne = database.events.find((event) => event.id === 'event-1')
+    const eventTwo = database.events.find((event) => event.id === 'event-2')
+    if (eventOne) eventOne.date = futureIso(2)
+    if (eventTwo) eventTwo.date = futureIso(5)
+  })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 async function renderEventsRoute(path, user = authUsers.student, { postsData = [] } = {}) {
@@ -25,6 +41,7 @@ async function renderEventsRoute(path, user = authUsers.student, { postsData = [
     { path: '/association/events', element: <AssociationEventsPage /> },
     { path: '/association/events/create', element: <EventFormPage /> },
     { path: '/association/events/:eventId/edit', element: <EventFormPage /> },
+    { path: '/users/:userId', element: <PublicProfilePage /> },
     { path: '/feed', element: <StudentDashboard postsData={postsData} /> },
   ], { initialEntries: [path] })
 
@@ -49,6 +66,38 @@ function futureDateTime(days = 3) {
 }
 
 describe('Events experience', () => {
+  it('shows the current Association name on event cards and details', async () => {
+    await profilesService.update('association-2', { name: 'Green Innovation Society' }, 'association-2')
+    const list = await renderEventsRoute('/events')
+
+    const eventCard = (await screen.findByRole('heading', { name: 'Hackathon Green Campus' })).closest('article')
+    expect(within(eventCard).getByText('Green Innovation Society')).toBeInTheDocument()
+    list.unmount()
+    list.router.dispose()
+
+    await renderEventsRoute('/events/event-2')
+    expect(await screen.findByText('Green Innovation Society')).toBeInTheDocument()
+  })
+
+  it('opens a participant public profile from their photo in Association event management', async () => {
+    const user = userEvent.setup()
+    const event = await eventsService.create({
+      title: 'Association profile link event',
+      description: 'A profile link test.',
+      date: futureDateTime(),
+      location: 'Main Hall',
+    }, authUsers.association.id)
+    await eventsService.register(event.id, authUsers.student.id, { phone: '+212 600 000 000' })
+    const { router } = await renderEventsRoute('/association/events', authUsers.association)
+
+    await user.click(await screen.findByRole('button', { name: 'View participants' }))
+    const dialog = await screen.findByRole('dialog', { name: `Participants — ${event.title}` })
+    await user.click(within(dialog).getByRole('link', { name: "View Sam Student's profile" }))
+
+    expect(await screen.findByRole('heading', { name: 'Sam Student' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/users/student-1')
+  })
+
   it.each([
     ['student', authUsers.student],
     ['representative', authUsers.representative],
@@ -134,7 +183,7 @@ describe('Events experience', () => {
     await renderEventsRoute('/events/event-1')
 
     expect(await screen.findByRole('heading', { name: 'Conférence IA responsable' })).toBeInTheDocument()
-    expect(screen.getByText('48', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Register for this event' }))
 
     const registrationDialog = await screen.findByRole('dialog', { name: 'Register for Conférence IA responsable' })
@@ -142,8 +191,8 @@ describe('Events experience', () => {
     await user.type(within(registrationDialog).getByRole('textbox', { name: 'Message (optional)' }), 'I will arrive early.')
     await user.click(within(registrationDialog).getByRole('button', { name: 'Confirm registration' }))
 
-    expect(await screen.findByText('The event now has 49 participants.')).toBeInTheDocument()
-    expect(screen.getByText('49', { exact: true })).toBeInTheDocument()
+    expect(await screen.findByText('The event now has 2 participants.')).toBeInTheDocument()
+    expect(screen.getByText('2', { exact: true })).toBeInTheDocument()
     expect(await eventsService.getMyRegistrations(authUsers.student.id)).toEqual(
       expect.arrayContaining([expect.objectContaining({ eventId: 'event-1', phone: '+212 6 55 44 33 22' })]),
     )
@@ -152,10 +201,109 @@ describe('Events experience', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel participation' }))
     const cancelDialog = await screen.findByRole('dialog', { name: 'Cancel event registration?' })
     await user.click(within(cancelDialog).getByRole('button', { name: 'Cancel registration' }))
-    await waitFor(() => expect(screen.getByText('48', { exact: true })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('1', { exact: true })).toBeInTheDocument())
     expect(await eventsService.getMyRegistrations(authUsers.student.id)).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ eventId: 'event-1' })]),
     )
+  })
+
+  it('shows each persisted registration with its own submitted details to the owning Association', async () => {
+    const user = userEvent.setup()
+    const event = await eventsService.create({
+      title: 'Registration details test event',
+      description: 'Verifies private registration details remain tied to each participant.',
+      date: futureDateTime(),
+      location: 'Main Hall',
+    }, authUsers.association.id)
+    await eventsService.register(event.id, 'student-2', {
+      phone: '+212 6 22 33 44 55',
+      message: 'Please reserve a front seat.',
+    })
+
+    const studentView = await renderEventsRoute(`/events/${event.id}`)
+    await user.click(await screen.findByRole('button', { name: 'Register for this event' }))
+    const registrationDialog = await screen.findByRole('dialog', {
+      name: `Register for ${event.title}`,
+    })
+    await user.type(
+      within(registrationDialog).getByRole('textbox', { name: 'Phone number' }),
+      '+212 6 66 77 88 99',
+    )
+    await user.type(
+      within(registrationDialog).getByRole('textbox', { name: 'Message (optional)' }),
+      'I can help with setup.',
+    )
+    await user.click(within(registrationDialog).getByRole('button', { name: 'Confirm registration' }))
+    expect(await within(registrationDialog).findByText('You’re registered for Registration details test event.'))
+      .toBeInTheDocument()
+    expect(await eventsService.getMyRegistrations(authUsers.student.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventId: event.id,
+          userId: authUsers.student.id,
+          phone: '+212 6 66 77 88 99',
+          message: 'I can help with setup.',
+        }),
+      ]),
+    )
+    studentView.unmount()
+
+    const associationView = await renderEventsRoute('/association/events', authUsers.association)
+    const eventCard = (await screen.findByRole('heading', { name: event.title })).closest('article')
+    await user.click(within(eventCard).getByRole('button', { name: 'View participants' }))
+    const participantsDialog = await screen.findByRole('dialog', {
+      name: `Participants — ${event.title}`,
+    })
+    const samRegistration = within(participantsDialog)
+      .getByRole('link', { name: 'Sam Student' })
+      .closest('li')
+    const hamzaRegistration = within(participantsDialog)
+      .getByRole('link', { name: 'Hamza Tya' })
+      .closest('li')
+
+    expect(samRegistration).toHaveTextContent('+212 6 66 77 88 99')
+    expect(samRegistration).toHaveTextContent('I can help with setup.')
+    expect(hamzaRegistration).toHaveTextContent('+212 6 22 33 44 55')
+    expect(hamzaRegistration).toHaveTextContent('Please reserve a front seat.')
+    expect(await eventsService.getRegistrations(event.id, authUsers.association.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: authUsers.student.id,
+          phone: '+212 6 66 77 88 99',
+          message: 'I can help with setup.',
+          participant: expect.objectContaining({
+            id: authUsers.student.id,
+            name: 'Sam Student',
+          }),
+        }),
+      ]),
+    )
+    associationView.unmount()
+  })
+
+  it('shows clear fallbacks for older registrations without submitted fields', async () => {
+    await transact((database) => {
+      const registration = database.registrations.find((item) => item.id === 'registration-2')
+      delete registration.phone
+      delete registration.message
+    })
+    const associationTwo = {
+      ...authUsers.association,
+      id: 'association-2',
+      associationId: 'association-2',
+      name: 'Club Innovation & Technologies',
+    }
+    const { unmount } = await renderEventsRoute('/association/events', associationTwo)
+    const eventCard = (await screen.findByRole('heading', { name: 'Hackathon Green Campus' })).closest('article')
+    await userEvent.setup().click(within(eventCard).getByRole('button', { name: 'View participants' }))
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Participants — Hackathon Green Campus',
+    })
+    const registration = within(dialog).getByRole('link', { name: 'Sam Student' }).closest('li')
+    expect(registration).toHaveTextContent('Not provided')
+    expect(registration).toHaveTextContent('No message provided')
+    unmount()
   })
 
   it('validates and creates an Association event with an optional image', async () => {
@@ -177,8 +325,17 @@ describe('Events experience', () => {
     fireEvent.change(dateInput, { target: { value: futureDateTime() } })
 
     const image = new File([new Uint8Array([137, 80, 78, 71])], 'showcase.png', { type: 'image/png' })
-    await user.upload(document.querySelector('input[type="file"]'), image)
+    const uploadInput = document.querySelector('input[type="file"]')
+    await user.upload(uploadInput, image)
     expect(await screen.findByAltText('Preview of the event')).toHaveAttribute('src', expect.stringContaining('data:image/png;base64'))
+    expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove selected image' }))
+    expect(screen.queryByAltText('Preview of the event')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="file"]')).toBeInTheDocument()
+
+    await user.upload(document.querySelector('input[type="file"]'), image)
+    expect(await screen.findByAltText('Preview of the event')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Publish event' }))
     expect(await screen.findByRole('heading', { name: 'Arts showcase' })).toBeInTheDocument()
@@ -192,12 +349,42 @@ describe('Events experience', () => {
     expect(created.imageUrl).toContain('data:image/png;base64')
   })
 
+  it('shows, replaces, and removes an existing Event image during editing', async () => {
+    const user = userEvent.setup()
+    const ownEvent = await eventsService.create({
+      title: 'Image edit test',
+      description: 'Test existing image handling.',
+      date: futureDateTime(4),
+      location: 'Studio',
+      imageUrl: 'data:image/png;base64,ZXhpc3Rpbmc=',
+    }, authUsers.association.id)
+
+    await renderEventsRoute(`/association/events/${ownEvent.id}/edit`, authUsers.association)
+    expect(await screen.findByAltText('Preview of the event')).toHaveAttribute('src', 'data:image/png;base64,ZXhpc3Rpbmc=')
+    expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Replace image' }))
+    const replacement = new File([new Uint8Array([137, 80, 78, 71])], 'replacement.png', { type: 'image/png' })
+    await user.upload(document.querySelector('input[type="file"]'), replacement)
+    expect(await screen.findByAltText('Preview of the event')).toHaveAttribute('src', expect.stringContaining('data:image/png;base64'))
+
+    await user.click(screen.getByRole('button', { name: 'Remove selected image' }))
+    expect(screen.queryByAltText('Preview of the event')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="file"]')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByRole('heading', { name: 'Image edit test' })).toBeInTheDocument()
+    expect((await eventsService.getById(ownEvent.id)).imageUrl).toBeNull()
+  })
+
   it('prevents editing another Association’s event and allows its owner to edit and delete an unregistered event', async () => {
     const user = userEvent.setup()
     const unauthorized = await renderEventsRoute('/association/events/event-2/edit', authUsers.association)
     expect(await screen.findByRole('alert')).toHaveTextContent('You can only edit events published by your association.')
     expect(screen.queryByRole('textbox', { name: 'Event title' })).not.toBeInTheDocument()
     await expect(eventsService.update('event-2', { title: 'Unauthorized' }, authUsers.association.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(eventsService.deleteEvent('event-2', authUsers.association.id))
       .rejects.toMatchObject({ code: 'FORBIDDEN' })
     unauthorized.unmount()
 
@@ -290,7 +477,31 @@ describe('Events experience', () => {
     expect(screen.queryByRole('button', { name: 'View participants' })).not.toBeInTheDocument()
     await expect(eventsService.getRegistrations('event-2', authUsers.association.id))
       .rejects.toMatchObject({ code: 'FORBIDDEN' })
+    await expect(eventsService.getRegistrations('event-1', associationTwo.id))
+      .rejects.toMatchObject({ code: 'FORBIDDEN' })
     associationOne.unmount()
+  })
+
+  it('shows loading and empty states while fetching Association events', async () => {
+    let resolveEvents
+    const pendingEvents = new Promise((resolve) => {
+      resolveEvents = resolve
+    })
+    vi.spyOn(eventsService, 'getAll').mockReturnValue(pendingEvents)
+
+    await renderEventsRoute('/association/events', authUsers.association)
+    expect(screen.getByRole('status')).toHaveTextContent('Loading your events')
+
+    resolveEvents([])
+    expect(await screen.findByText('No events published yet')).toBeInTheDocument()
+  })
+
+  it('shows a recoverable error when Association events fail to load', async () => {
+    vi.spyOn(eventsService, 'getAll').mockRejectedValueOnce(new Error('Event data unavailable.'))
+    await renderEventsRoute('/association/events', authUsers.association)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Event data unavailable.')
+    expect(screen.getByRole('button', { name: 'Reload events' })).toBeInTheDocument()
   })
 
   it('uses persistent event registrations in the Student Dashboard after remounting', async () => {
@@ -302,14 +513,14 @@ describe('Events experience', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Register for Conférence IA responsable' })
     await user.type(within(dialog).getByRole('textbox', { name: 'Phone number' }), '+212 6 55 44 33 22')
     await user.click(within(dialog).getByRole('button', { name: 'Confirm registration' }))
-    expect(await within(eventCard).findByText('49 participants')).toBeInTheDocument()
+    expect(await within(eventCard).findByText('2 participants')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
     firstDashboard.unmount()
 
     await renderEventsRoute('/feed')
     const refreshedCard = (await screen.findByRole('heading', { name: 'Conférence IA responsable' })).closest('article')
     expect(await within(refreshedCard).findByText('You’re registered')).toBeInTheDocument()
-    expect(within(refreshedCard).getByText('49 participants')).toBeInTheDocument()
+    expect(within(refreshedCard).getByText('2 participants')).toBeInTheDocument()
     expect(within(refreshedCard).queryByRole('button', { name: 'Participate' })).not.toBeInTheDocument()
   })
 })

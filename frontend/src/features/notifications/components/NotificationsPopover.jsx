@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { Alert, Avatar, Button, EmptyState, Popover } from '../../../components/ui'
 import NavigationIcon from '../../../components/navigation/NavigationIcon'
 import { useAuth } from '../../../context/AuthContext'
@@ -142,9 +143,26 @@ function NotificationsPopover() {
                 key={notification.id}
                 className={`flex gap-3 px-4 py-3 ${notification.readAt ? '' : 'bg-indigo-50/60'}`}
               >
-                <Avatar name={notification.directorName} size="sm" />
+                <Avatar
+                  src={notification.creatorAvatar}
+                  name={notification.creatorName || notification.associationName || notification.directorName}
+                  size="sm"
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm leading-5 text-slate-700">{notification.message}</p>
+                  {notification.href ? (
+                    <Link
+                      to={notification.href}
+                      className="block text-sm leading-5 text-slate-700 hover:text-violet-700"
+                      aria-label={`Open ${notification.itemType === 'CLASS_ISSUE' ? 'Class Issue' : notification.itemType}: ${notification.itemTitle}`}
+                    >
+                      {notification.message}
+                    </Link>
+                  ) : (
+                    <p className="text-sm leading-5 text-slate-700">{notification.message}</p>
+                  )}
+                  {notification.creatorRole && (
+                    <p className="mt-1 text-xs text-slate-500">{notification.creatorRole}</p>
+                  )}
                   <time
                     dateTime={notification.createdAt}
                     className="mt-1 block text-xs text-slate-500"

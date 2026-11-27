@@ -37,11 +37,8 @@ export async function create(data, directorId) {
 }
 
 export async function update(id, data, directorId) {
-  assertOnlyFields(data, ['name', 'description', 'institution', 'avatarUrl', 'isActive'], 'Association update')
+  assertOnlyFields(data, ['name', 'description', 'institution', 'avatarUrl'], 'Association update')
   if (Object.hasOwn(data, 'name')) assertText(data.name, 'Association name', { maxLength: 160 })
-  if (Object.hasOwn(data, 'isActive') && typeof data.isActive !== 'boolean') {
-    throw new MockDataError('VALIDATION_ERROR', 'Association active status must be a boolean.')
-  }
   for (const field of ['description', 'institution', 'avatarUrl']) {
     if (Object.hasOwn(data, field) && typeof data[field] !== 'string') {
       throw new MockDataError('VALIDATION_ERROR', `Association ${field} must be text.`)
@@ -50,7 +47,7 @@ export async function update(id, data, directorId) {
   return transact((database) => {
     requireDirector(database, directorId)
     const association = requireRecord(database, 'associations', id)
-    for (const field of ['name', 'description', 'institution', 'avatarUrl', 'isActive']) {
+    for (const field of ['name', 'description', 'institution', 'avatarUrl']) {
       if (Object.hasOwn(data, field)) {
         association[field] = typeof data[field] === 'string' && field !== 'avatarUrl'
           ? data[field].trim()
@@ -79,11 +76,4 @@ export async function deleteAssociation(id, directorId) {
     database.associations = database.associations.filter((item) => item.id !== id)
     return association
   })
-}
-
-export async function setActive(id, isActive, directorId) {
-  if (typeof isActive !== 'boolean') {
-    throw new MockDataError('VALIDATION_ERROR', 'Association active status must be a boolean.')
-  }
-  return update(id, { isActive }, directorId)
 }

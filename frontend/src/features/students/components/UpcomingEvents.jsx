@@ -104,22 +104,28 @@ function UpcomingEvents({
                   <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                     <div
                       role="group"
-                      aria-label={`${event.participantCount ?? 0} event participants`}
+                        aria-label={`${event.participantCount ?? 0} event participant${event.participantCount === 1 ? '' : 's'}`}
                       className="flex shrink-0 items-center -space-x-2"
                     >
                       {participants.slice(0, 4).map((participant) => (
-                        <Avatar
+                        <Link
                           key={participant.id}
-                          src={participant.avatarUrl}
-                          name={participant.name}
-                          alt={`${participant.name}, event participant`}
-                          size="sm"
-                          className="ring-2 ring-white"
-                        />
+                          to={ROUTES.USER_PROFILE(participant.id)}
+                          aria-label={`View ${participant.name}'s profile`}
+                          className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        >
+                          <Avatar
+                            src={participant.avatarUrl}
+                            name={participant.name}
+                            alt={`${participant.name}, event participant`}
+                            size="sm"
+                            className="ring-2 ring-white"
+                          />
+                        </Link>
                       ))}
                     </div>
                     <p className="min-w-0 text-xs font-semibold text-slate-600">
-                      {event.participantCount ?? 0} participants
+                      {event.participantCount ?? 0} {event.participantCount === 1 ? 'participant' : 'participants'}
                     </p>
                   </div>
 

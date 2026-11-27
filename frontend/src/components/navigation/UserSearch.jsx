@@ -2,8 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { getUserRoleLabel } from '../../constants/navigation'
 import { ROUTES } from '../../constants/routes'
-import { users } from '../../mocks/data/users'
 import { Avatar, SearchInput } from '../ui'
+import * as usersService from '../../features/users/users.service'
 
 function getSearchRole(user) {
   const role = getUserRoleLabel(user)
@@ -14,18 +14,40 @@ function UserSearch() {
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [searchRevision, setSearchRevision] = useState(0)
+  const [searchResult, setSearchResult] = useState({ key: '', users: [], error: '' })
   const searchId = useId()
   const searchRef = useRef(null)
   const navigate = useNavigate()
   const normalizedQuery = query.trim().toLocaleLowerCase()
+  const searchKey = normalizedQuery ? `${normalizedQuery}:${searchRevision}` : ''
 
+  useEffect(() => {
+    if (!searchKey) return undefined
+    let active = true
+    usersService.getAll()
+      .then((records) => {
+        if (active) setSearchResult({ key: searchKey, users: records, error: '' })
+      })
+      .catch((error) => {
+        if (active) {
+          setSearchResult({
+            key: searchKey,
+            users: [],
+            error: error.message || 'People could not be loaded.',
+          })
+        }
+      })
+    return () => { active = false }
+  }, [searchKey])
+
+  const resultIsCurrent = searchResult.key === searchKey
   const matches = useMemo(() => {
-    if (!normalizedQuery) return []
-
-    return users
+    if (!normalizedQuery || !resultIsCurrent) return []
+    return searchResult.users
       .filter((user) => user.name?.toLocaleLowerCase().includes(normalizedQuery))
       .slice(0, 8)
-  }, [normalizedQuery])
+  }, [normalizedQuery, resultIsCurrent, searchResult.users])
 
   useEffect(() => {
     function handleOutsidePointerDown(event) {
@@ -41,6 +63,7 @@ function UserSearch() {
   function selectUser(user) {
     setIsOpen(false)
     setQuery('')
+    setSearchRevision((revision) => revision + 1)
     navigate(ROUTES.USER_PROFILE(user.id))
   }
 
@@ -79,8 +102,12 @@ function UserSearch() {
           setQuery('')
           setActiveIndex(0)
           setIsOpen(true)
+          setSearchRevision((revision) => revision + 1)
         }}
-        onFocus={() => setIsOpen(true)}
+        onFocus={() => {
+          setIsOpen(true)
+          setSearchRevision((revision) => revision + 1)
+        }}
         onKeyDown={handleKeyDown}
         role="combobox"
         aria-label="Search people"
@@ -103,40 +130,57 @@ function UserSearch() {
             <p role="status" className="px-4 py-3 text-sm text-slate-500">
               Search for students, directors, associations, or representatives.
             </p>
+          ) : !resultIsCurrent ? (
+            <p role="status" className="px-4 py-3 text-sm text-slate-500">
+              Searching people…
+            </p>
+          ) : searchResult.error ? (
+            <p role="alert" className="px-4 py-3 text-sm text-red-700">
+              {searchResult.error}
+              <button
+                type="button"
+                onClick={() => setSearchRevision((revision) => revision + 1)}
+                className="ml-2 font-semibold underline"
+              >
+                Try again
+              </button>
+            </p>
           ) : matches.length === 0 ? (
             <p role="status" className="px-4 py-3 text-sm text-slate-500">
               No people found for “{query.trim()}”.
             </p>
           ) : (
             <div role="listbox" aria-label="People search results">
-              {matches.map((user, index) => (
-                <button
-                  key={user.id}
-                  id={`${listboxId}-${user.id}`}
-                  type="button"
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  tabIndex={-1}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => selectUser(user)}
-                  className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-violet-50 focus-visible:bg-violet-50 focus-visible:outline-none"
-                >
-                  <Avatar
-                    src={user.avatarUrl}
-                    name={user.name}
-                    alt=""
-                    size="sm"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-900">
-                      {user.name}
+              {matches.map((user, index) => {
+                return (
+                  <button
+                    key={user.id}
+                    id={`${listboxId}-${user.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    tabIndex={-1}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => selectUser(user)}
+                    className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-violet-50 focus-visible:bg-violet-50 focus-visible:outline-none"
+                  >
+                    <Avatar
+                      src={user.avatarUrl}
+                      name={user.name}
+                      alt=""
+                      size="sm"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-900">
+                        {user.name}
+                      </span>
+                      <span className="block truncate text-xs text-slate-500">
+                        {getSearchRole(user)}
+                      </span>
                     </span>
-                    <span className="block truncate text-xs text-slate-500">
-                      {getSearchRole(user)}
-                    </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>

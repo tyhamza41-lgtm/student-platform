@@ -12,7 +12,6 @@ import {
 import { ROUTES } from '../../../constants/routes'
 import { USER_ROLES } from '../../../constants/roles'
 import { useAuth } from '../../../context/AuthContext'
-import * as usersService from '../../users/users.service'
 import * as eventsService from '../events.service'
 import EventCard from '../components/EventCard'
 
@@ -55,10 +54,7 @@ function AssociationEventsPage() {
     setParticipantsLoading(true)
     try {
       const registrations = await eventsService.getRegistrations(event.id, currentUser.id)
-      const users = await Promise.all(registrations.map((registration) => (
-        usersService.getById(registration.userId)
-      )))
-      setParticipants(users.filter(Boolean))
+      setParticipants(registrations)
     } catch (loadError) {
       setParticipantsError(loadError.message || 'Participants could not be loaded.')
     } finally {
@@ -149,7 +145,7 @@ function AssociationEventsPage() {
         onConfirm={deleteEvent}
         title="Delete this event?"
         message={eventToDelete
-          ? `Delete “${eventToDelete.title}”? This action cannot be undone. Events with registrations cannot be deleted.`
+          ? `Delete “${eventToDelete.title}”? This permanently removes the event and its registrations, and sends a notice to all platform users.`
           : ''}
         confirmText="Delete event"
         isLoading={deleting}
@@ -169,24 +165,83 @@ function AssociationEventsPage() {
         ) : participants.length === 0 ? (
           <EmptyState title="No participants yet" description="Registrations will appear here." />
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {participants.map((participant) => (
-              <li key={participant.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                <Avatar
-                  src={participant.avatarUrl}
-                  name={participant.name}
-                  alt={participant.name}
-                  size="md"
-                />
-                <Link
-                  to={ROUTES.USER_PROFILE(participant.id)}
-                  onClick={() => setParticipantsEvent(null)}
-                  className="font-semibold text-slate-800 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          <ul className="space-y-3">
+            {participants.map((registration) => {
+              const participant = registration.participant
+              const participantName = participant?.name || 'Student'
+              const phone = typeof registration.phone === 'string' && registration.phone.trim()
+                ? registration.phone
+                : 'Not provided'
+              const message = typeof registration.message === 'string' && registration.message.trim()
+                ? registration.message
+                : 'No message provided'
+
+              return (
+                <li
+                  key={registration.id}
+                  className="rounded-xl border border-slate-200 p-4 sm:p-5"
                 >
-                  {participant.name}
-                </Link>
-              </li>
-            ))}
+                  <div className="flex min-w-0 items-start gap-3">
+                    {participant?.id ? (
+                      <Link
+                        to={ROUTES.USER_PROFILE(participant.id)}
+                        aria-label={`View ${participantName}'s profile`}
+                        onClick={() => setParticipantsEvent(null)}
+                        className="shrink-0"
+                      >
+                        <Avatar
+                          src={participant.avatarUrl}
+                          name={participantName}
+                          alt={`${participantName} profile`}
+                          size="md"
+                        />
+                      </Link>
+                    ) : (
+                      <Avatar src={null} name={participantName} alt="" size="md" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {participant?.id ? (
+                        <Link
+                          to={ROUTES.USER_PROFILE(participant.id)}
+                          onClick={() => setParticipantsEvent(null)}
+                          className="font-semibold text-slate-800 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        >
+                          {participantName}
+                        </Link>
+                      ) : (
+                        <p className="font-semibold text-slate-800">{participantName}</p>
+                      )}
+                      {participant?.classGroup?.name && (
+                        <p className="mt-1 text-sm text-slate-500">
+                          {participant.classGroup.name}
+                        </p>
+                      )}
+                      {participant?.bio && (
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600">
+                          {participant.bio}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Registration phone
+                      </dt>
+                      <dd className="mt-1 break-words text-sm text-slate-800">{phone}</dd>
+                    </div>
+                    <div className="min-w-0 sm:col-span-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Registration message
+                      </dt>
+                      <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">
+                        {message}
+                      </dd>
+                    </div>
+                  </dl>
+                </li>
+              )
+            })}
           </ul>
         )}
       </Modal>

@@ -17,8 +17,8 @@ export async function getAll(filters = {}) {
       const author = usersById.get(comment.authorId)
       return {
         ...comment,
-        authorName: comment.authorName || author?.name || 'Platform user',
-        authorAvatar: comment.authorAvatar || author?.avatarUrl || null,
+        authorName: author?.name || comment.authorName || 'Platform user',
+        authorAvatar: author?.avatarUrl || comment.authorAvatar || null,
       }
     })
 }
@@ -43,15 +43,12 @@ export async function add(data, actorId) {
       database,
       actorId,
       hasIssueId
-        ? Object.values(USER_ROLES)
+        ? [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR]
         : [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
     )
 
     if (hasPostId) {
-      const post = requireRecord(database, 'posts', targetId)
-      if (author.role === USER_ROLES.ASSOCIATION && post.associationId !== author.associationId) {
-        throw new MockDataError('FORBIDDEN', 'Associations can only comment on their own posts.')
-      }
+      requireRecord(database, 'posts', targetId)
     } else {
       requireRecord(database, 'issues', targetId)
     }
@@ -76,7 +73,9 @@ export async function deleteComment(id, actorId) {
     const actor = requireActor(
       database,
       actorId,
-      [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
+      comment.issueId
+        ? [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR]
+        : [USER_ROLES.STUDENT, USER_ROLES.ASSOCIATION, USER_ROLES.DIRECTOR],
     )
     if (comment.authorId !== actor.id && actor.role !== USER_ROLES.DIRECTOR) {
       throw new MockDataError('FORBIDDEN', 'You can only delete your own comments.')

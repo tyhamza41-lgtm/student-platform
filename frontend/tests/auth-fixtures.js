@@ -12,6 +12,9 @@ export const users = {
     name: 'Riley Representative',
     email: 'riley@example.test',
     role: USER_ROLES.STUDENT,
+    classId: 'class-ginf-2',
+    isActive: true,
+    isRepresentative: true,
     representativeStatus: REPRESENTATIVE_STATUS.ACTIVE,
   },
   association: {

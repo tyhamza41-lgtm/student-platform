@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { users } from '../../tests/auth-fixtures'
 import { AuthSession } from '../../tests/auth-test-utils'
 import { USER_ROLES } from '../constants/roles'
@@ -56,6 +56,10 @@ const guardRoutes = [
     ],
   },
 ]
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 async function renderGuard(path, user) {
   const router = createMemoryRouter(guardRoutes, { initialEntries: [path] })
@@ -129,6 +133,7 @@ describe('route guards', () => {
   it('allows an active representative based on a normalized API status', async () => {
     const representative = {
       ...users.student,
+      classId: 'class-ginf-2',
       representativeStatus: ' active ',
     }
 
@@ -140,6 +145,7 @@ describe('route guards', () => {
   it('allows the nested active representative status format', async () => {
     const representative = {
       ...users.student,
+      classId: 'class-ginf-2',
       representative: { status: 'ACTIVE' },
     }
 
@@ -152,6 +158,16 @@ describe('route guards', () => {
     [
       'inactive student even when flagged',
       { ...users.representative, representativeStatus: 'INACTIVE', isRepresentative: true },
+      'Feed destination',
+    ],
+    [
+      'inactive account with an active representative designation',
+      { ...users.representative, isActive: false },
+      'Feed destination',
+    ],
+    [
+      'unassigned active representative',
+      { ...users.representative, classId: undefined },
       'Feed destination',
     ],
     ['ordinary student', users.student, 'Feed destination'],

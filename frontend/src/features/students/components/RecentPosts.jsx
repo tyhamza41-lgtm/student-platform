@@ -1,6 +1,6 @@
 import PostCard from '../../posts/components/PostCard'
 
-function RecentPosts({ posts = [], onPostDeleted, onPostModerated }) {
+function RecentPosts({ posts = [], onPostDeleted }) {
   if (posts.length === 0) return null
 
   return (
@@ -18,7 +18,6 @@ function RecentPosts({ posts = [], onPostDeleted, onPostModerated }) {
             key={post.id}
             post={post}
             onDeleted={onPostDeleted}
-            onModerated={onPostModerated}
           />
         ))}
       </div>

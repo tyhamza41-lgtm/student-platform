@@ -35,6 +35,7 @@ function EventFormPage() {
   const [imageUrl, setImageUrl] = useState(null)
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
+  const [imageUploadKey, setImageUploadKey] = useState(0)
   const [loading, setLoading] = useState(isEditing)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -92,6 +93,17 @@ function EventFormPage() {
       setImagePreview(imageUrl || '')
       setError(readError.message)
     }
+  }
+
+  function handleRemoveImage() {
+    setImageFile(null)
+    setImageUrl(null)
+    setImagePreview('')
+    setImageUploadKey((key) => key + 1)
+  }
+
+  function handleReplaceImage() {
+    setImagePreview('')
   }
 
   async function handleSubmit(submitEvent) {
@@ -207,33 +219,40 @@ function EventFormPage() {
                 />
               </FormField>
             </div>
-            <FileUpload
-              label="Event image (optional)"
-              accept="image/*"
-              maxSize={MAX_IMAGE_SIZE}
-              files={imageFile ? [imageFile] : []}
-              onChange={handleImageChange}
-              helperText="PNG, JPG, GIF, or WebP up to 2 MB."
-            />
+            {!imagePreview && (
+              <FileUpload
+                key={imageUploadKey}
+                label="Event image (optional)"
+                accept=".jpg,.jpeg,.png,.webp"
+                maxSize={MAX_IMAGE_SIZE}
+                files={imageFile ? [imageFile] : []}
+                onChange={handleImageChange}
+                helperText="PNG, JPG, or WebP up to 2 MB."
+              />
+            )}
             {imagePreview && (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-slate-700">Image preview</p>
-                <img
-                  src={imagePreview}
-                  alt="Preview of the event"
-                  className="max-h-80 w-full rounded-xl border border-slate-200 object-contain"
-                />
-                {!imageFile && imageUrl && (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Preview of the event"
+                    className="max-h-80 w-full rounded-xl border border-slate-200 object-contain"
+                  />
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      setImageUrl(null)
-                      setImagePreview('')
-                    }}
+                    aria-label="Remove selected image"
+                    onClick={handleRemoveImage}
+                    className="absolute right-2 top-2 bg-white/95 shadow"
                   >
-                    Remove current image
+                    X
+                  </Button>
+                </div>
+                {isEditing && imageUrl && !imageFile && (
+                  <Button type="button" size="sm" variant="outline" onClick={handleReplaceImage}>
+                    Replace image
                   </Button>
                 )}
               </div>

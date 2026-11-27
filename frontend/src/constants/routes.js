@@ -44,7 +44,6 @@ export const ROUTES = {
     STUDENTS: '/director/students',
     ASSOCIATIONS: '/director/associations',
     REPRESENTATIVES: '/director/representatives',
-    MODERATION: '/director/moderation',
     ISSUES: '/director/issues',
     ISSUE_DETAILS: (issueId) => `/director/issues/${issueId}`,
   },

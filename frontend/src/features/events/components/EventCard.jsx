@@ -18,6 +18,7 @@ function EventCard({
   onDelete,
   onViewParticipants,
 }) {
+  const participantCount = event.participantCount ?? 0
   const upcoming = isUpcoming(event)
   const statusLabel = event.status === 'CANCELLED'
     ? 'Cancelled'
@@ -72,8 +73,8 @@ function EventCard({
         <div className="mt-auto pt-4">
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
             <div className="flex items-center gap-2 text-sm text-slate-600">
-              <span className="font-semibold tabular-nums text-slate-900">{event.participantCount ?? 0}</span>
-              <span>participants</span>
+              <span className="font-semibold tabular-nums text-slate-900">{participantCount}</span>
+              <span>{participantCount === 1 ? 'participant' : 'participants'}</span>
               {isRegistered && <Badge variant="success" size="xs">Registered</Badge>}
             </div>
             <Link
